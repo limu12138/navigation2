@@ -18,4 +18,5 @@
   - [TODO]支持使用vln_gazebo_simulator中的小车的仿真接口
 - [TODO]局部避障验证与实现
   - [TODO]需要在vln_gazebo_simulator中增加局部障碍物(Tipriest加)
+  - 
 

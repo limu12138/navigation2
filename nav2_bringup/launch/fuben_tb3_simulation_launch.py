@@ -19,7 +19,7 @@ import os
 from ament_index_python.packages import get_package_share_directory
 
 from launch import LaunchDescription
-from launch.actions import DeclareLaunchArgument, ExecuteProcess, IncludeLaunchDescription, SetEnvironmentVariable
+from launch.actions import DeclareLaunchArgument, ExecuteProcess, IncludeLaunchDescription
 from launch.conditions import IfCondition
 from launch.launch_description_sources import PythonLaunchDescriptionSource
 from launch.substitutions import LaunchConfiguration, PythonExpression
@@ -164,7 +164,7 @@ def generate_launch_description():
         ),
         launch_arguments={
             'world': world,
-            'verbose': 'True'
+            'verbose': 'true'
         }.items()
     )
 
@@ -173,7 +173,7 @@ def generate_launch_description():
             os.path.join(pkg_gazebo_ros, 'launch', 'gzclient.launch.py')
         ),
         launch_arguments={
-            'verbose': 'True'
+            'verbose': 'true'
         }.items()
     )
 
@@ -194,19 +194,13 @@ def generate_launch_description():
     with open(urdf, 'r') as infp:
         robot_description = infp.read()
 
-    # Set environment variables to suppress [INFO] logs       #修改su
-    set_env_vars = [
-        SetEnvironmentVariable('RCUTILS_LOGGING_BUFFERED_STREAM', '1'),  # 缓冲日志流
-        SetEnvironmentVariable('RCUTILS_CONSOLE_OUTPUT_FORMAT', ''),    # 禁用日志格式
-        SetEnvironmentVariable('ROS_LOG_LEVEL', 'error')               # 全局日志级别设置为 error
-    ]
-
     start_robot_state_publisher_cmd = Node(
+        condition=IfCondition(use_robot_state_pub),
         package='robot_state_publisher',
         executable='robot_state_publisher',
         name='robot_state_publisher',
         namespace=namespace,
-        output='log',  # 日志重定向到文件
+        output='screen',
         parameters=[{'use_sim_time': use_sim_time,
                      'robot_description': robot_description}],
         remappings=remappings)
@@ -214,7 +208,7 @@ def generate_launch_description():
     start_gazebo_spawner_cmd = Node(
         package='gazebo_ros',
         executable='spawn_entity.py',
-        output='log',  # 日志重定向到文件
+        output='screen',
         arguments=[
             '-entity', robot_name,
             '-file', robot_sdf,
@@ -233,25 +227,18 @@ def generate_launch_description():
     bringup_cmd = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(launch_dir, 'bringup_launch.py')),
-        launch_arguments={
-            'namespace': namespace,
-            'use_namespace': use_namespace,
-            'slam': slam,
-            'map': '',  # 不使用静态地图文件
-            'use_sim_time': use_sim_time,
-            'params_file': params_file,
-            'autostart': autostart,
-            'use_composition': use_composition,
-            'use_respawn': use_respawn,
-            'grid_map_topic': 'grid_map'  # 设置 grid_map 话题
-        }.items())
+        launch_arguments={'namespace': namespace,
+                          'use_namespace': use_namespace,
+                          'slam': slam,
+                          'map': map_yaml_file,
+                          'use_sim_time': use_sim_time,
+                          'params_file': params_file,
+                          'autostart': autostart,
+                          'use_composition': use_composition,
+                          'use_respawn': use_respawn}.items())
 
     # Create the launch description and populate
     ld = LaunchDescription()
-
-    # Add environment variable settings
-    for env_var in set_env_vars:
-        ld.add_action(env_var)
 
     # Declare the launch options
     ld.add_action(declare_namespace_cmd)

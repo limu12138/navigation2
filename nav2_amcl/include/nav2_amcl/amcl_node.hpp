@@ -42,6 +42,8 @@
 #include "tf2_ros/transform_broadcaster.h"
 #include "tf2_ros/transform_listener.h"
 #include "pluginlib/class_loader.hpp"
+#include <grid_map_msgs/msg/grid_map.hpp>
+#include <grid_map_ros/grid_map_ros.hpp>
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wunused-parameter"
@@ -391,6 +393,12 @@ protected:
   double z_rand_;
   std::string scan_topic_{"scan"};
   std::string map_topic_{"map"};
+
+private:
+  // grid_map support: topic name, subscriber and callback
+  std::string grid_map_topic_;
+  rclcpp::Subscription<grid_map_msgs::msg::GridMap>::SharedPtr grid_map_sub_;
+  void gridMapCallback(const grid_map_msgs::msg::GridMap::SharedPtr msg);
 };
 
 }  // namespace nav2_amcl

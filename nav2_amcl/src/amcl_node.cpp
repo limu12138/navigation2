@@ -42,6 +42,8 @@
 #include "tf2_ros/transform_broadcaster.h"
 #include "tf2_ros/transform_listener.h"
 #include "tf2_ros/create_timer_ros.h"
+#include <grid_map_ros/grid_map_ros.hpp>
+#include <grid_map_msgs/msg/grid_map.hpp>
 
 #pragma GCC diagnostic push
 #pragma GCC diagnostic ignored "-Wpedantic"
@@ -227,6 +229,10 @@ AmclNode::AmclNode(const rclcpp::NodeOptions & options)
   add_parameter(
     "first_map_only", rclcpp::ParameterValue(false),
     "Set this to true, when you want to load a new map published from the map_server");
+
+  add_parameter(
+    "grid_map_topic", rclcpp::ParameterValue("grid_map"),
+    "Topic to subscribe to in order to receive the grid map for localization");
 }
 
 AmclNode::~AmclNode()
@@ -1090,6 +1096,7 @@ AmclNode::initParameters()
   get_parameter("always_reset_initial_pose", always_reset_initial_pose_);
   get_parameter("scan_topic", scan_topic_);
   get_parameter("map_topic", map_topic_);
+  get_parameter("grid_map_topic", grid_map_topic_);
 
   save_pose_period_ = tf2::durationFromSec(1.0 / save_pose_rate);
   transform_tolerance_ = tf2::durationFromSec(tmp_tol);
@@ -1534,10 +1541,16 @@ AmclNode::initPubSub()
     "initialpose", rclcpp::SystemDefaultsQoS(),
     std::bind(&AmclNode::initialPoseReceived, this, std::placeholders::_1));
 
+  printf("*******************************amcl_node_cpp*******************************\n");
   map_sub_ = create_subscription<nav_msgs::msg::OccupancyGrid>(
     map_topic_, rclcpp::QoS(rclcpp::KeepLast(1)).transient_local().reliable(),
     std::bind(&AmclNode::mapReceived, this, std::placeholders::_1));
 
+  // 订阅 grid_map 消息
+  grid_map_sub_ = this->create_subscription<grid_map_msgs::msg::GridMap>(
+    grid_map_topic_, rclcpp::QoS(10),
+    std::bind(&AmclNode::gridMapCallback, this, std::placeholders::_1));
+  
   RCLCPP_INFO(get_logger(), "Subscribed to map topic.");
 }
 
@@ -1617,6 +1630,41 @@ AmclNode::initLaserScan()
 {
   scan_error_count_ = 0;
   last_laser_received_ts_ = rclcpp::Time(0);
+}
+
+void
+AmclNode::gridMapCallback(const grid_map_msgs::msg::GridMap::SharedPtr msg) {
+  grid_map::GridMap grid_map;
+  grid_map::GridMapRosConverter::fromMessage(*msg, grid_map);
+
+  // 提取 traversability 图层并转换为导航地图
+  auto traversability_layer = "traversability";
+  if (!grid_map.exists(traversability_layer)) {
+    RCLCPP_WARN(get_logger(), "GridMap does not contain 'traversability' layer.");
+    printf("*******************************GridMap does not contain 'traversability' layer.*******************************\n");
+    return;
+  }
+
+  nav_msgs::msg::OccupancyGrid nav_map;  // 创建 nav_msgs::msg::OccupancyGrid 类型的对象, 这是 AMCL 期望的标准导航地图格式
+  // GridMap message's header is at msg->header (not msg->info.header)
+  nav_map.header = msg->header;
+  nav_map.info.resolution = grid_map.getResolution();
+  nav_map.info.width = grid_map.getSize()(0);
+  nav_map.info.height = grid_map.getSize()(1);
+  nav_map.info.origin.position.x = grid_map.getPosition()(0) - grid_map.getLength()(0) / 2.0;  // navigation 地图的原点在左下角，而 grid map 中心在中央
+  nav_map.info.origin.position.y = grid_map.getPosition()(1) - grid_map.getLength()(1) / 2.0;
+
+  nav_map.data.resize(nav_map.info.width * nav_map.info.height, -1);
+  for (grid_map::GridMapIterator it(grid_map); !it.isPastEnd(); ++it) {
+    const grid_map::Index index(*it);
+    const float value = grid_map.at(traversability_layer, index);
+    const int nav_index = index(1) * nav_map.info.width + index(0);  // 注意su：这里可能有一个潜在的索引转换错误
+    nav_map.data[nav_index] = (value > 0.5) ? 0 : 100; // 可通行为 0，不可通行为 100
+  }
+
+  // 更新 AMCL 的地图
+  handleMapMessage(nav_map);
+  printf("*******************************更新 AMCL 的地图*******************************\n");
 }
 
 }  // namespace nav2_amcl
