@@ -453,6 +453,8 @@ inline void savitskyGolayFilter(
   std::array<mppi::models::Control, 4> & control_history,
   const models::OptimizerSettings & settings)
 {
+  // 作用：对“名义控制序列”做平滑，降低抖动/急剧变化。
+  // 实现：对 vx / vy / wz 分别做 Savitzky-Golay (二次, 9 点窗口) 滤波。
   // Savitzky-Golay Quadratic, 9-point Coefficients
   xt::xarray<float> filter = {-21.0, 14.0, 39.0, 54.0, 59.0, 54.0, 39.0, 14.0, -21.0};
   filter /= 231.0;
@@ -464,10 +466,15 @@ inline void savitskyGolayFilter(
     return;
   }
 
+  // 把 9 点窗口与固定系数做点积，输出该点的平滑结果。
   auto applyFilter = [&](const xt::xarray<float> & data) -> float {
       return xt::sum(data * filter, {0}, immediate)();
     };
 
+  // 在单个轴上滑动窗口滤波。
+  // 边界处理：
+  // - 序列开头的 4 个点没有足够的“左侧邻居”，用 control_history 的 4 个历史控制补齐。
+  // - 序列末尾的 4 个点没有足够的“右侧邻居”，用末端值重复补齐。
   auto applyFilterOverAxis =
     [&](xt::xtensor<float, 1> & sequence,
       const float hist_0, const float hist_1, const float hist_2, const float hist_3) -> void
@@ -525,6 +532,7 @@ inline void savitskyGolayFilter(
         sequence(idx + 4)});
 
       for (idx = 4; idx != num_sequences - 4; idx++) {
+        // 中间段：窗口完全落在当前序列内部，直接用前后 4 个点。
         sequence(idx) = applyFilter(
         {
           sequence(idx - 4),
@@ -603,6 +611,10 @@ inline void savitskyGolayFilter(
     control_history[1].wz, control_history[2].wz, control_history[3].wz);
 
   // Update control history
+  // 更新历史控制：用于下一周期滤波的“左侧补齐”。
+  // offset 与 shift_control_sequence 逻辑一致：
+  // - 若启用 shift，则本周期真正要输出的是 control_sequence[1]，因此这里记录 [1]。
+  // - 否则记录 [0]。
   unsigned int offset = settings.shift_control_sequence ? 1 : 0;
   control_history[0] = control_history[1];
   control_history[1] = control_history[2];

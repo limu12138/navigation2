@@ -238,6 +238,7 @@ def generate_launch_description():
             'use_namespace': use_namespace,
             'slam': slam,
             'map': '',  # 不使用静态地图文件
+            # 'map': map_yaml_file,
             'use_sim_time': use_sim_time,
             'params_file': params_file,
             'autostart': autostart,

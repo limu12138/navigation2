@@ -1,0 +1,465 @@
+amcl:
+  ros__parameters:
+    use_sim_time: True
+    alpha1: 0.2
+    alpha2: 0.2
+    alpha3: 0.2
+    alpha4: 0.2
+    alpha5: 0.2
+    base_frame_id: "base_footprint"
+    beam_skip_distance: 0.5
+    beam_skip_error_threshold: 0.9
+    beam_skip_threshold: 0.3
+    do_beamskip: false
+    global_frame_id: "map"
+    lambda_short: 0.1
+    laser_likelihood_max_dist: 2.0
+    laser_max_range: 100.0
+    laser_min_range: -1.0
+    laser_model_type: "likelihood_field"
+    max_beams: 60
+    max_particles: 2000
+    min_particles: 500
+    odom_frame_id: "odom"
+    pf_err: 0.05
+    pf_z: 0.99
+    recovery_alpha_fast: 0.0
+    recovery_alpha_slow: 0.0
+    resample_interval: 1
+    robot_model_type: "nav2_amcl::DifferentialMotionModel"
+    save_pose_rate: 0.5
+    sigma_hit: 0.2
+    tf_broadcast: true
+    transform_tolerance: 1.0
+    update_min_a: 0.2
+    update_min_d: 0.25
+    z_hit: 0.5
+    z_max: 0.05
+    z_rand: 0.5
+    z_short: 0.05
+    scan_topic: scan
+
+bt_navigator:
+  ros__parameters:
+    use_sim_time: True
+    global_frame: map
+    robot_base_frame: base_link
+    odom_topic: /odom  # 发布里程计数据的话题
+    bt_loop_duration: 10  # BT执行的每次迭代的持续时间（以毫秒为单位）
+    default_server_timeout: 20  # BT操作节点等待动作服务器确认的默认超时时间（毫秒）。如果提供了输入端口“server_timeout”，则此值将被覆盖为BT节点的超时时间
+    wait_for_service_timeout: 1000
+    # 'default_nav_through_poses_bt_xml' and 'default_nav_to_pose_bt_xml' are use defaults:
+    # nav2_bt_navigator/navigate_to_pose_w_replanning_and_recovery.xml
+    # nav2_bt_navigator/navigate_through_poses_w_replanning_and_recovery.xml
+    # They can be set here or via a RewrittenYaml remap from a parent launch file to Nav2.
+    plugin_lib_names:
+      - nav2_compute_path_to_pose_action_bt_node
+      - nav2_compute_path_through_poses_action_bt_node
+      - nav2_smooth_path_action_bt_node
+      - nav2_follow_path_action_bt_node
+      - nav2_spin_action_bt_node
+      - nav2_wait_action_bt_node
+      - nav2_assisted_teleop_action_bt_node
+      - nav2_back_up_action_bt_node
+      - nav2_drive_on_heading_bt_node
+      - nav2_clear_costmap_service_bt_node
+      - nav2_is_stuck_condition_bt_node
+      - nav2_goal_reached_condition_bt_node
+      - nav2_goal_updated_condition_bt_node
+      - nav2_globally_updated_goal_condition_bt_node
+      - nav2_is_path_valid_condition_bt_node
+      - nav2_initial_pose_received_condition_bt_node
+      - nav2_reinitialize_global_localization_service_bt_node
+      - nav2_rate_controller_bt_node
+      - nav2_distance_controller_bt_node
+      - nav2_speed_controller_bt_node
+      - nav2_truncate_path_action_bt_node
+      - nav2_truncate_path_local_action_bt_node
+      - nav2_goal_updater_node_bt_node
+      - nav2_recovery_node_bt_node
+      - nav2_pipeline_sequence_bt_node
+      - nav2_round_robin_node_bt_node
+      - nav2_transform_available_condition_bt_node
+      - nav2_time_expired_condition_bt_node
+      - nav2_path_expiring_timer_condition
+      - nav2_distance_traveled_condition_bt_node
+      - nav2_single_trigger_bt_node
+      - nav2_goal_updated_controller_bt_node
+      - nav2_is_battery_low_condition_bt_node
+      - nav2_navigate_through_poses_action_bt_node
+      - nav2_navigate_to_pose_action_bt_node
+      - nav2_remove_passed_goals_action_bt_node
+      - nav2_planner_selector_bt_node
+      - nav2_controller_selector_bt_node
+      - nav2_goal_checker_selector_bt_node
+      - nav2_controller_cancel_bt_node
+      - nav2_path_longer_on_approach_bt_node
+      - nav2_wait_cancel_bt_node
+      - nav2_spin_cancel_bt_node
+      - nav2_back_up_cancel_bt_node
+      - nav2_assisted_teleop_cancel_bt_node
+      - nav2_drive_on_heading_cancel_bt_node
+      - nav2_is_battery_charging_condition_bt_node
+
+bt_navigator_navigate_through_poses_rclcpp_node:
+  ros__parameters:
+    use_sim_time: True
+
+bt_navigator_navigate_to_pose_rclcpp_node:
+  ros__parameters:
+    use_sim_time: True
+
+controller_server:
+  ros__parameters:
+    use_sim_time: True
+    controller_frequency: 30.0  # 以每秒50次的频率进行1000次或以每秒30次的频率进行2000次似乎能产生良好的结果
+    min_x_velocity_threshold: 0.0001  # 控制器服务器在将接收到的里程计消息发送给控制器插件之前会过滤速度部分。低于此阈值（以 m/s 为单位）的里程计值将被设置为 0.0
+    min_y_velocity_threshold: 0.0001  # 同上，y 方向速度阈值
+    min_theta_velocity_threshold: 0.0001  # 同上，角速度阈值（以 rad/s 为单位）
+    failure_tolerance: 0.3  # 被调用的控制器插件在失败之前的最大持续时间（即插件的 computeVelocityCommands 函数抛出异常）允许的时间（以秒为单位），否则 nav2_msgs::action::FollowPath 动作将失败。将其设置为特殊值 -1.0 可以使其无限制，设置为 0 则禁用，设置为正值可设定适当的超时时间
+    progress_checker_plugin: "progress_checker"  # 检查机器人进度的进度检查插件的映射名称。以前用于Humble和旧版本的``progress_checker_plugin``，使用单个字符串插件
+    goal_checker_plugins: ["general_goal_checker"] # 检查目标是否已达到的目标检查插件的映射名称
+    controller_plugins: ["FollowPath"]  # 此列表中定义的每个插件命名空间都需要有一个:code:`plugin`参数，用于定义要加载到该命名空间中的插件类型
+
+    # Progress checker parameters
+    progress_checker:
+      plugin: "nav2_controller::SimpleProgressChecker"
+      required_movement_radius: 0.5  # 如果机器人在指定的时间允许内没有移动超过该距离，则认为机器人没有进展（以米为单位）
+      movement_time_allowance: 10.0  # 允许机器人在指定的时间内没有进展（以秒为单位）
+    
+    general_goal_checker:
+      stateful: True
+      plugin: "nav2_controller::SimpleGoalChecker"
+      xy_goal_tolerance: 0.25  # 机器人被认为已达到目标位置的允许误差范围（以米为单位）
+      yaw_goal_tolerance: 0.25  # 机器人被认为已达到目标方向的允许误差范围（以弧度为单位）
+
+    # MPPI parameters (替换 DWB 为 MPPI，并加入线/角互斥配置)
+    FollowPath:
+      plugin: "nav2_mppi_controller::MPPIController"
+      time_steps: 56  # 候选轨迹中的时间步数（点数）
+      model_dt: 0.05  # model_dt``参数通常应设置为控制频率的持续时间。因此，如果控制频率为20hz，则应设置为``0.05。但是，您也可以将其设置得更低**但不能更高**  # 每个时间步长``dt``的长度，以秒为单位。``time_steps * model_dt``是预测的时间范围
+      batch_size: 2000  # 在给定迭代中，从当前最优控制序列中随机抽样的候选轨迹数量。以每秒50次的频率进行1000次或以每秒30次的频率进行2000次似乎能产生良好的结果
+      vx_std: 0.2  # Vx的采样标准差
+      vy_std: 0.2  # Vy的采样标准差
+      wz_std: 0.4  # Wz（角速度）的采样标准差
+      vx_max: 0.5  # 目标最大前向速度（米/秒）
+      vx_min: -0.35  # 最大反向速度（米/秒）
+      vy_max: 0.5  # 如果使用``Omni``运动模型，则为目标最大横向速度（米/秒）
+      wz_max: 1.9  # 最大旋转速度（弧度/秒）
+      iteration_count: 1  # MPPI 算法中的迭代次数。建议保持为 1，并选择更大的批次大小
+      prune_distance: 1.7  # 从路径上最近点到机器人之前的距离，用于修剪路径（米）
+      transform_tolerance: 0.1  # 使用TF进行数据转换的时间容差（秒）
+      temperature: 0.3  # 通过其成本选择轨迹的选择性（该值越接近0，我们越考虑成本较低的控制），0表示使用具有最佳成本的控制，较大的值将导致只考虑所有轨迹的平均成本
+      gamma: 0.015  # 光滑性（高）和能量消耗（低）之间的权衡。这是一个复杂的参数，通常不需要从默认值进行更改。详细信息请参见《信息论模型预测控制：理论与自动驾驶应用》第3D-2节
+      motion_model: "DiffDrive"  # 用于轨迹规划的期望运动模型。选项包括``DiffDrive``（差分驱动）、``Omni``（全向）或``Ackermann``（阿克曼）。差分驱动机器人可以使用前进/后退和角速度；全向机器人添加了横向运动；而阿克曼则添加了最小曲率约束
+      visualize: false  # 是否发布用于可视化的调试轨迹。这可能会大大减慢控制器的速度（例如，每30hz有1000个大小为56的批次数据）
+      TrajectoryVisualizer:
+        trajectory_step: 5  # 要可视化的轨迹之间的步长，以对候选轨迹池进行下采样
+        time_step: 3  # 在轨迹上的点之间用于可视化的步长，以降低轨迹密度
+      AckermannConstraints:
+        min_turning_r: 0.2
+      critics: ["ConstraintCritic", "CostCritic", "GoalCritic", "GoalAngleCritic", "PathAlignCritic", "PathFollowCritic", "PathAngleCritic", "PreferForwardCritic"]  # 要使用的批评家插件函数向量，无需 mppi::critic:: 命名空间，在加载时会自动添加
+      ConstraintCritic:
+        enabled: true
+        cost_power: 1  # 应用于项的幂次
+        cost_weight: 4.0  # 应用于评估器项的权重
+        # 互斥软约束（推荐开启）：当 |vx| > epsilon_v 且 |wz| > epsilon_w 时施加大惩罚，逼近“走-转-走”。
+        # 说明：epsilon 选得更大，会允许微小的“混合”用于平滑；weight 越大，越接近硬约束。
+        exclusive_linear_epsilon: 0.05
+        exclusive_angular_epsilon: 0.10
+        exclusive_cost_weight: 100000.0
+        exclusive_cost_power: 1
+      # 旧版互斥 critic（如果你已经改为在 ConstraintCritic 内做互斥惩罚，建议不要再启用它，避免重复惩罚）
+      # ExclusiveMutualCritic:
+      #   enabled: false
+      #   cost_power: 1
+      #   cost_weight: 1000.0
+      #   epsilon_vx: 0.001
+      #   epsilon_wz: 0.001
+      GoalCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 5.0
+        threshold_to_consider: 1.4  # 机器人与目标之间的最小距离（米），超过该距离将考虑目标距离成本
+      GoalAngleCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 3.0
+        threshold_to_consider: 0.5  # 机器人与目标之间的最小距离（米），超过该距离将考虑角度目标成本
+      PreferForwardCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 5.0
+        threshold_to_consider: 0.5  # 机器人与目标之间的距离（米），考虑前进优先并允许目标评论家接管的**停止**
+      # ObstaclesCritic:
+      #   enabled: true
+      #   cost_power: 1
+      #   repulsion_weight: 1.5  # 在一般情况下更喜欢低成本空间中的路径的评论家的权重。这与关键术语分开，以便在动态场景中通过路径对齐对障碍物行为进行微调，而不影响可能直接导致近距离碰撞的动作。这在与障碍物的``inflation_radius``距离内应用
+      #   critical_weight: 20.0  # 在距离小于``collision_margin_distance``的近距离碰撞中，为了仅仅作为虚拟扩大足迹的方法防止近距离碰撞，应用于评论家的权重。这不应该被用于一般性地影响避障行为，使其远离关键性碰撞
+      #   consider_footprint: false
+      #   collision_cost: 10000.0
+      #   collision_margin_distance: 0.1  # 从碰撞到施加严厉惩罚的边缘距离（米），类似于足迹扩大。0.05-0.2之间是合理的范围。请注意，它将极大地影响控制器不进入比此更狭窄的空间，因此确保该参数设置为比机器人预计需要穿越的最窄空间更低的值
+      #   near_goal_distance: 0.5  # 距离目标附近的距离（米），用于停止应用偏好障碍项，以便机器人能够在靠近障碍物的情况下平稳地收敛到目标姿态
+      CostCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 3.81
+        critical_cost: 300.0
+        consider_footprint: true  # 是否使用点成本（如果机器人是圆形的或计算能力较低）或计算SE2足迹成本
+        collision_cost: 1000000.0  # 在轨迹中应用于真实碰撞的成本
+        near_goal_distance: 1.0
+      PathAlignCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 14.0
+        max_path_occupancy_ratio: 0.05  # 在存在场景中的动态物体的情况下，避障和路径跟随评估者避开障碍物并按照路径意图进行跟随之前，路径中可以被占用的最大比例。介于0-1之间，表示0-100%
+        trajectory_point_step: 3
+        threshold_to_consider: 0.5  # 机器人与目标之间的距离（米），**停止**考虑路径对齐并允许目标评论器接管
+        offset_from_furthest: 20  # 检查候选轨迹是否在其路径上足够远，以应用对齐评论器。这样可以确保只有在实际跟踪路径时才考虑路径对齐，防止尴尬的初始化动作阻止机器人离开路径以实现适当的航向
+        use_path_orientations: false
+      PathFollowCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 5.0
+        offset_from_furthest: 5  # 在任何轨迹实现驱动路径跟踪之后，最远点后的路径点数
+        threshold_to_consider: 1.4  # 机器人与目标之间的距离（以米为单位），用于**停止**考虑路径跟随并允许目标评估者接管
+      PathAngleCritic:
+        enabled: true
+        cost_power: 1
+        cost_weight: 2.0
+        offset_from_furthest: 4  # 计算相对于路径角度时，任何轨迹实现的最远点之后的路径点数
+        threshold_to_consider: 0.5  # 机器人与目标之间的距离（以米为单位），用于**停止**考虑路径角度并允许目标评估者接管
+        max_angle_to_furthest: 1.0  # 机器人与目标之间的角度距离（以弧度为单位），超过该距离开始考虑路径角度成本
+        forward_preference: true
+      # 线/角互斥（MPPI 采样/约束域内生效）
+      exclusive_mode: True
+      exclusive_debug: True
+      exclusive_policy: "ANGULAR_PRIORITY"   # 可选："LINEAR_PRIORITY" / "AUTO" / "ANGULAR_PRIORITY"
+      exclusive_linear_threshold: 0.01        # 线速度判定阈值 (m/s)
+      exclusive_angular_threshold: 0.1     # 角速度判定阈值 (rad/s) 0.1
+      exclusive_linear_gain: 1.0             # 线速度权重
+      exclusive_angular_gain: 3.0            # 角速度折算系数
+
+local_costmap:
+  local_costmap:
+    ros__parameters:
+      update_frequency: 5.0
+      publish_frequency: 2.0
+      global_frame: odom
+      robot_base_frame: base_link  # 机器人基准坐标系
+      use_sim_time: True
+      rolling_window: true  # 代价地图是否应与机器人基座标框一起滚动
+      width: 3  # 地图的宽度
+      height: 3  # 地图的高度
+      resolution: 0.05  # 代价地图的每个像素的分辨率，以米为单位
+      # 加入了显示包围框
+      footprint: "[[0.18, 0.10], [0.18, -0.10], [-0.18, -0.10], [-0.18, 0.10]]"
+      #robot_radius: 0.20
+      plugins: ["voxel_layer", "inflation_layer"]
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        cost_scaling_factor: 4.0
+        inflation_radius: 0.20
+      voxel_layer:
+        plugin: "nav2_costmap_2d::VoxelLayer"
+        enabled: True
+        publish_voxel_map: True
+        origin_z: 0.0
+        z_resolution: 0.05
+        z_voxels: 16
+        max_obstacle_height: 2.0
+        mark_threshold: 0
+        observation_sources: scan
+        scan:
+          topic: /scan
+          max_obstacle_height: 2.0
+          clearing: True
+          marking: True
+          data_type: "LaserScan"
+          raytrace_max_range: 3.0
+          raytrace_min_range: 0.0
+          obstacle_max_range: 2.5
+          obstacle_min_range: 0.0
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        map_subscribe_transient_local: True
+      always_send_full_costmap: True  # 是否在每次更新时发送完整的代价地图，而不是增量更新
+
+global_costmap:
+  global_costmap:
+    ros__parameters:
+      update_frequency: 1.0
+      publish_frequency: 1.0
+      global_frame: map  # 参考坐标系
+      robot_base_frame: base_link
+      use_sim_time: True
+      # 加入了显示包围框
+      footprint: "[[0.18, 0.10], [0.18, -0.10], [-0.18, -0.10], [-0.18, 0.10]]"  # 需要填充的占位符大小（以米为单位）
+      #robot_radius: 0.20
+      resolution: 0.05
+      track_unknown_space: true  # 如果为false，则将未知空间视为自由空间，否则视为未知空间
+      plugins: ["static_layer", "obstacle_layer", "inflation_layer"]  # 参数命名空间和名称的映射插件名称列表，字符串向量{"静态层", "障碍层", "膨胀层"}
+      obstacle_layer:
+        plugin: "nav2_costmap_2d::ObstacleLayer"
+        enabled: True
+        observation_sources: scan
+        scan:
+          topic: /scan
+          max_obstacle_height: 2.0
+          clearing: True
+          marking: True
+          data_type: "LaserScan"
+          raytrace_max_range: 3.0
+          raytrace_min_range: 0.0
+          obstacle_max_range: 2.5
+          obstacle_min_range: 0.0
+      static_layer:
+        plugin: "nav2_costmap_2d::StaticLayer"
+        map_subscribe_transient_local: True
+      inflation_layer:
+        plugin: "nav2_costmap_2d::InflationLayer"
+        cost_scaling_factor: 4.0
+        inflation_radius: 0.25
+      always_send_full_costmap: True
+
+map_server:
+  ros__parameters:
+    use_sim_time: True
+    # Overridden in launch by the "map" launch configuration or provided default value.
+    # To use in yaml, remove the default "map" value in the tb3_simulation_launch.py file & provide full path to map below.
+    yaml_filename: ""
+
+map_saver:
+  ros__parameters:
+    use_sim_time: True
+    save_map_timeout: 5.0
+    free_thresh_default: 0.25
+    occupied_thresh_default: 0.65
+    map_subscribe_transient_local: True
+
+# planner_server:
+#   ros__parameters:
+#     planner_plugins: ["GridBased"]
+#     use_sim_time: True
+
+#     GridBased:
+#       # plugin: "nav2_smac_planner/SmacPlannerHybrid"
+#       # plugin: "nav2_smac_planner/SmacPlannerLattice"
+#       plugin: "nav2_smac_planner/SmacPlanner2D"
+
+#       tolerance: 0.5                      # tolerance for planning if unable to reach exact pose, in meters
+#       downsample_costmap: false           # whether or not to downsample the map
+#       downsampling_factor: 1              # multiplier for the resolution of the costmap layer (e.g. 2 on a 5cm costmap would be 10cm)
+#       allow_unknown: false                # allow traveling in unknown space
+#       max_iterations: 1000000             # maximum total iterations to search for before failing (in case unreachable), set to -1 to disable
+#       max_on_approach_iterations: 1000    # maximum number of iterations to attempt to reach goal once in tolerance
+#       max_planning_time: 3.5              # max time in s for planner to plan, smooth, and upsample. Will scale maximum smoothing and upsampling times based on remaining time after planning.
+#       motion_model_for_search: "DUBIN"    # For Hybrid Dubin, Redds-Shepp
+#       cost_travel_multiplier: 2.0         # For 2D: Cost multiplier to apply to search to steer away from high cost areas. Larger values will place in the center of aisles more exactly (if non-`FREE` cost potential field exists) but take slightly longer to compute. To optimize for speed, a value of 1.0 is reasonable. A reasonable tradeoff value is 2.0. A value of 0.0 effective disables steering away from obstacles and acts like a naive binary search A*.
+#       angle_quantization_bins: 64         # For Hybrid nodes: Number of angle bins for search, must be 1 for 2D node (no angle search)
+#       analytic_expansion_ratio: 3.5       # For Hybrid/Lattice nodes: The ratio to attempt analytic expansions during search for final approach.
+#       analytic_expansion_max_length: 3.0    # For Hybrid/Lattice nodes: The maximum length of the analytic expansion to be considered valid to prevent unsafe shortcutting (in meters). This should be scaled with minimum turning radius and be no less than 4-5x the minimum radius
+#       minimum_turning_radius: 0.40        # For Hybrid/Lattice nodes: minimum turning radius in m of path / vehicle
+#       reverse_penalty: 2.1                # For Reeds-Shepp model: penalty to apply if motion is reversing, must be => 1
+#       change_penalty: 0.0                 # For Hybrid nodes: penalty to apply if motion is changing directions, must be >= 0
+#       non_straight_penalty: 1.20          # For Hybrid nodes: penalty to apply if motion is non-straight, must be => 1
+#       cost_penalty: 2.0                   # For Hybrid nodes: penalty to apply to higher cost areas when adding into the obstacle map dynamic programming distance expansion heuristic. This drives the robot more towards the center of passages. A value between 1.3 - 3.5 is reasonable.
+#       retrospective_penalty: 0.025        # For Hybrid/Lattice nodes: penalty to prefer later maneuvers before earlier along the path. Saves search time since earlier nodes are not expanded until it is necessary. Must be >= 0.0 and <= 1.0
+#       rotation_penalty: 5.0               # For Lattice node: Penalty to apply only to pure rotate in place commands when using minimum control sets containing rotate in place primitives. This should always be set sufficiently high to weight against this action unless strictly necessary for obstacle avoidance or there may be frequent discontinuities in the plan where it requests the robot to rotate in place to short-cut an otherwise smooth path for marginal path distance savings.
+#       lookup_table_size: 20.0               # For Hybrid nodes: Size of the dubin/reeds-sheep distance window to cache, in meters.
+#       cache_obstacle_heuristic: True      # For Hybrid nodes: Cache the obstacle map dynamic programming distance expansion heuristic between subsiquent replannings of the same goal location. Dramatically speeds up replanning performance (40x) if costmap is largely static.  
+#       allow_reverse_expansion: False      # For Lattice nodes: Whether to expand state lattice graph in forward primitives or reverse as well, will double the branching factor at each step.   
+#       smooth_path: True                   # For Lattice/Hybrid nodes: Whether or not to smooth the path, always true for 2D nodes.
+#       smoother:
+#         max_iterations: 1000
+#         w_smooth: 0.3
+#         w_data: 0.2
+#         tolerance: 1.0e-10
+#         do_refinement: true               # Whether to recursively run the smoother 3 times on the results from prior runs to refine the results further
+
+planner_server:
+  ros__parameters:
+    expected_planner_frequency: 20.0
+    planner_plugin_types: ["nav2_theta_star_planner/ThetaStarPlanner"]
+    use_sim_time: True
+    planner_plugin_ids: ["GridBased"]  # 映射到参数和处理请求的插件名称列表
+    GridBased:
+      how_many_corners: 8  # 在4连通和8连通图展开之间选择时，接受的取值为4和8
+      w_euc_cost: 1.0  # 施加在路径长度上的权重
+      w_traversal_cost: 2.0  # 该参数调节高成本节点所受惩罚的严厉程度。从上述g(neigh)方程可知，成本函数中的成本感知组件构成抛物线曲线，因此该参数值增大时会使曲线变陡，从而增强不同成本节点间的差异化（当曲线变陡时，成本差值将增大）。
+
+# planner_server:
+#   ros__parameters:
+#     expected_planner_frequency: 20.0
+#     use_sim_time: True
+#     planner_plugins: ["GridBased"]
+#     GridBased:
+#       plugin: "nav2_navfn_planner/NavfnPlanner"
+#       tolerance: 0.5  # 请求的目标姿势和路径结束点之间的距离容差（以米为单位）
+#       use_astar: true  # 是否使用A*算法进行路径规划。如果设置为false，则使用Dijkstra算法。
+#       allow_unknown: true # 是否允许路径规划器在未知空间中进行路径规划。如果设置为true，路径规划器可以在未知区域内寻找路径；如果设置为false，则只能在已知区域内进行规划。
+
+smoother_server:
+  ros__parameters:
+    use_sim_time: True
+    smoother_plugins: ["simple_smoother"]
+    simple_smoother:
+      plugin: "nav2_smoother::SimpleSmoother"
+      tolerance: 1.0e-10
+      max_its: 1000
+      do_refinement: True
+
+behavior_server:
+  ros__parameters:
+    costmap_topic: local_costmap/costmap_raw
+    footprint_topic: local_costmap/published_footprint
+    cycle_frequency: 10.0
+    behavior_plugins: ["spin", "backup", "drive_on_heading", "assisted_teleop", "wait"]
+    spin:
+      plugin: "nav2_behaviors/Spin"
+    backup:
+      plugin: "nav2_behaviors/BackUp"
+    drive_on_heading:
+      plugin: "nav2_behaviors/DriveOnHeading"
+    wait:
+      plugin: "nav2_behaviors/Wait"
+    assisted_teleop:
+      plugin: "nav2_behaviors/AssistedTeleop"
+    global_frame: odom
+    robot_base_frame: base_link
+    transform_tolerance: 0.1
+    use_sim_time: true
+    simulate_ahead_time: 2.0
+    max_rotational_vel: 1.0
+    min_rotational_vel: 0.4
+    rotational_acc_lim: 3.2
+
+robot_state_publisher:
+  ros__parameters:
+    use_sim_time: True
+
+waypoint_follower:
+  ros__parameters:
+    use_sim_time: True
+    loop_rate: 20
+    stop_on_failure: false
+    waypoint_task_executor_plugin: "wait_at_waypoint"
+    wait_at_waypoint:
+      plugin: "nav2_waypoint_follower::WaitAtWaypoint"
+      enabled: True
+      waypoint_pause_duration: 200
+
+velocity_smoother:
+  ros__parameters:
+    use_sim_time: True
+    smoothing_frequency: 20.0
+    scale_velocities: False
+    feedback: "OPEN_LOOP"
+    max_velocity: [0.26, 0.0, 1.0]
+    min_velocity: [-0.26, 0.0, -1.0]
+    max_accel: [2.5, 0.0, 3.2]
+    max_decel: [-2.5, 0.0, -3.2]
+    odom_topic: "odom"
+    odom_duration: 0.1
+    deadband_velocity: [0.0, 0.0, 0.0]
+    velocity_timeout: 1.0

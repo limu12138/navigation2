@@ -38,6 +38,16 @@ struct OptimizerSettings
   unsigned int iteration_count{0};
   bool shift_control_sequence{false};
   size_t retry_attempt_limit{0};
+
+  // 新增：线/角互斥相关配置
+  bool exclusive_mode{false};
+  bool exclusive_debug{false};
+  int exclusive_policy{0};                // 0: ANGULAR_PRIORITY, 1: LINEAR_PRIORITY, 2: AUTO
+  float exclusive_linear_threshold{0.0f};
+  float exclusive_angular_threshold{0.0f};
+  // 加权比较（AUTO 模式使用）：线速度权重与角速度折算系数
+  float exclusive_linear_gain{1.0f};
+  float exclusive_angular_gain{0.3f};
 };
 
 }  // namespace mppi::models

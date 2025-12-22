@@ -27,6 +27,10 @@ void NoiseGenerator::initialize(
   mppi::models::OptimizerSettings & settings, bool is_holonomic,
   const std::string & name, ParametersHandler * param_handler)
 {
+  // NoiseGenerator 做的事情很“纯粹”：
+  // - 生成形状为 [batch_size, time_steps] 的高斯噪声张量
+  // - 每次迭代把噪声加到当前名义控制序列（control_sequence）上，得到采样控制 state.cvx/cwz/cvy
+  // MPPI 的采样空间就是这些 noised controls。
   settings_ = settings;
   is_holonomic_ = is_holonomic;
   active_ = true;
@@ -35,9 +39,11 @@ void NoiseGenerator::initialize(
   getParam(regenerate_noises_, "regenerate_noises", false);
 
   if (regenerate_noises_) {
+    // 可选：开一个线程提前生成“下一次迭代”要用的噪声，减少主循环耗时。
     noise_thread_ = std::thread(std::bind(&NoiseGenerator::noiseThread, this));
   } else {
-    generateNoisedControls();
+    // 默认：在主线程直接生成噪声。
+    generateNoisedControls();  // // 为每个维度生成独立高斯噪声
   }
 }
 
@@ -51,7 +57,7 @@ void NoiseGenerator::shutdown()
   }
 }
 
-void NoiseGenerator::generateNextNoises()
+void NoiseGenerator::generateNextNoises()  // 触发“下一次噪声”的生成
 {
   // Trigger the thread to run in parallel to this iteration
   // to generate the next iteration's noises (if applicable).
@@ -66,6 +72,8 @@ void NoiseGenerator::setNoisedControls(
   models::State & state,
   const models::ControlSequence & control_sequence)
 {
+  // 将名义控制序列 + 噪声 = 本次迭代要 rollout/评分的 batch 采样控制。
+  // 注意：state.cvx/cwz/cvy 的 shape 是 [batch_size, time_steps]。
   std::unique_lock<std::mutex> guard(noise_lock_);
 
   xt::noalias(state.cvx) = control_sequence.vx + noises_vx_;
@@ -96,6 +104,7 @@ void NoiseGenerator::reset(mppi::models::OptimizerSettings & settings, bool is_h
 
 void NoiseGenerator::noiseThread()
 {
+  // 后台线程循环：等待主循环发出 ready_ 信号，再生成下一批噪声。
   do {
     std::unique_lock<std::mutex> guard(noise_lock_);
     noise_cond_.wait(guard, [this]() {return ready_;});
@@ -106,6 +115,8 @@ void NoiseGenerator::noiseThread()
 
 void NoiseGenerator::generateNoisedControls()
 {
+  // 为每个维度生成独立高斯噪声。
+  // 这相当于：u_k^i = u_k + eps_k^i，其中 eps ~ N(0, sigma^2)。
   auto & s = settings_;
 
   xt::noalias(noises_vx_) = xt::random::randn<float>(

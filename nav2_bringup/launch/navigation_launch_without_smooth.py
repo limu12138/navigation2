@@ -53,7 +53,7 @@ def generate_launch_description():
 
     # 生命周期管理器将管理这些节点（进入/退出各生命周期状态）
     lifecycle_nodes = ['controller_server',
-                       'smoother_server',
+                       # 移除 smoother_server
                        'planner_server',
                        'behavior_server',
                        'bt_navigator',
@@ -138,17 +138,6 @@ def generate_launch_description():
                 parameters=[configured_params],  # 注入统一参数
                 arguments=['--ros-args', '--log-level', log_level],
                 remappings=remappings + [('cmd_vel', 'cmd_vel_nav')]),
-            # 轨迹平滑（路径几何/速度调整）
-            Node(
-                package='nav2_smoother',
-                executable='smoother_server',
-                name='smoother_server',
-                output='screen',
-                respawn=use_respawn,
-                respawn_delay=2.0,
-                parameters=[configured_params],
-                arguments=['--ros-args', '--log-level', log_level],
-                remappings=remappings),
             # 规划器：生成从当前位姿到目标的全局路径
             Node(
                 package='nav2_planner',
@@ -230,13 +219,6 @@ def generate_launch_description():
                 name='controller_server',
                 parameters=[configured_params],
                 remappings=remappings + [('cmd_vel', 'cmd_vel_nav')]),
-            # 平滑器组件
-            ComposableNode(
-                package='nav2_smoother',
-                plugin='nav2_smoother::SmootherServer',
-                name='smoother_server',
-                parameters=[configured_params],
-                remappings=remappings),
             # 规划器组件
             ComposableNode(
                 package='nav2_planner',

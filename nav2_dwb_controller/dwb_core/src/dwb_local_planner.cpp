@@ -33,6 +33,7 @@
  */
 
 #include <algorithm>
+#include <cmath>
 #include <memory>
 #include <string>
 #include <utility>
@@ -55,6 +56,17 @@
 
 using nav2_util::declare_parameter_if_not_declared;
 using nav2_util::geometry_utils::euclidean_distance;
+
+namespace {
+// 互斥控制的文件域静态变量（避免修改头文件）
+bool g_exclusive_mode = false;
+std::string g_exclusive_policy = "ANGULAR_PRIORITY";
+double g_exclusive_linear_threshold = 0.0;
+double g_exclusive_angular_threshold = 0.0;
+// 新增：AUTO 比较的权重因子（线速度权重与角速度折算系数）
+double g_exclusive_linear_gain = 1.0;
+double g_exclusive_angular_gain = 0.3;  // 默认折算半径（m），可按底盘半宽调整
+}
 
 namespace dwb_core
 {
@@ -109,6 +121,27 @@ void DWBLocalPlanner::configure(
     node, dwb_plugin_name_ + ".short_circuit_trajectory_evaluation",
     rclcpp::ParameterValue(true));
 
+  // 声明互斥参数
+  declare_parameter_if_not_declared(
+    node, dwb_plugin_name_ + ".exclusive_mode",
+    rclcpp::ParameterValue(false));
+  declare_parameter_if_not_declared(
+    node, dwb_plugin_name_ + ".exclusive_policy",
+    rclcpp::ParameterValue(std::string("ANGULAR_PRIORITY")));
+  declare_parameter_if_not_declared(
+    node, dwb_plugin_name_ + ".exclusive_linear_threshold",
+    rclcpp::ParameterValue(0.0));
+  declare_parameter_if_not_declared(
+    node, dwb_plugin_name_ + ".exclusive_angular_threshold",
+    rclcpp::ParameterValue(0.0));
+  // 新增：AUTO 比较权重
+  declare_parameter_if_not_declared(
+    node, dwb_plugin_name_ + ".exclusive_linear_gain",
+    rclcpp::ParameterValue(1.0));
+  declare_parameter_if_not_declared(
+    node, dwb_plugin_name_ + ".exclusive_angular_gain",
+    rclcpp::ParameterValue(0.3));
+
   std::string traj_generator_name;
 
   double transform_tolerance;
@@ -125,6 +158,21 @@ void DWBLocalPlanner::configure(
     dwb_plugin_name_ + ".short_circuit_trajectory_evaluation",
     short_circuit_trajectory_evaluation_);
   node->get_parameter(dwb_plugin_name_ + ".shorten_transformed_plan", shorten_transformed_plan_);
+
+  // 读取互斥参数
+  node->get_parameter(dwb_plugin_name_ + ".exclusive_mode", g_exclusive_mode);
+  node->get_parameter(dwb_plugin_name_ + ".exclusive_policy", g_exclusive_policy);
+  node->get_parameter(dwb_plugin_name_ + ".exclusive_linear_threshold", g_exclusive_linear_threshold);
+  node->get_parameter(dwb_plugin_name_ + ".exclusive_angular_threshold", g_exclusive_angular_threshold);
+  // 新增：读取权重
+  node->get_parameter(dwb_plugin_name_ + ".exclusive_linear_gain", g_exclusive_linear_gain);
+  node->get_parameter(dwb_plugin_name_ + ".exclusive_angular_gain", g_exclusive_angular_gain);
+  if (g_exclusive_policy != "ANGULAR_PRIORITY" &&
+      g_exclusive_policy != "LINEAR_PRIORITY" &&
+      g_exclusive_policy != "AUTO") {
+    RCLCPP_WARN(logger_, "exclusive_policy must be ANGULAR_PRIORITY / LINEAR_PRIORITY / AUTO; fallback to ANGULAR_PRIORITY.");
+    g_exclusive_policy = "ANGULAR_PRIORITY";
+  }
 
   pub_ = std::make_unique<DWBPublisher>(node, dwb_plugin_name_);
   pub_->on_configure();
@@ -256,6 +304,33 @@ DWBLocalPlanner::computeVelocityCommands(
     pub_->publishEvaluation(results);
     geometry_msgs::msg::TwistStamped cmd_vel;
     cmd_vel.twist = nav_2d_utils::twist2Dto3D(cmd_vel2d.velocity);
+
+    // 移除：输出阶段互斥裁剪，避免影响最优性
+    // if (exclusive_mode_) {
+    //   const bool lin_ok = std::fabs(cmd_vel2d.velocity.x) >= exclusive_linear_threshold_;
+    //   const bool ang_ok = std::fabs(cmd_vel2d.velocity.theta) >= exclusive_angular_threshold_;
+    //   if (lin_ok && ang_ok) {
+    //     if (exclusive_policy_ == "ANGULAR_PRIORITY") {
+    //       cmd_vel2d.velocity.x = 0.0;
+    //     } else if (exclusive_policy_ == "LINEAR_PRIORITY") {
+    //       cmd_vel2d.velocity.theta = 0.0;
+    //     } else { // AUTO
+    //       if (std::fabs(cmd_vel2d.velocity.theta) >= std::fabs(cmd_vel2d.velocity.x)) {
+    //         cmd_vel2d.velocity.x = 0.0;
+    //       } else {
+    //         cmd_vel2d.velocity.theta = 0.0;
+    //       }
+    //     }
+    //   } else if (lin_ok) {
+    //     cmd_vel2d.velocity.theta = 0.0;
+    //   } else if (ang_ok) {
+    //     cmd_vel2d.velocity.x = 0.0;
+    //   } else {
+    //     cmd_vel2d.velocity.x = 0.0;
+    //     cmd_vel2d.velocity.theta = 0.0;
+    //   }
+    // }
+
     return cmd_vel;
   } catch (const nav2_core::PlannerException & e) {
     pub_->publishEvaluation(results);
@@ -357,6 +432,35 @@ DWBLocalPlanner::coreScoringAlgorithm(
   traj_generator_->startNewIteration(velocity);
   while (traj_generator_->hasMoreTwists()) {
     twist = traj_generator_->nextTwist();
+
+    // 在采样域内施加线/角互斥约束
+    if (g_exclusive_mode) {
+      const bool lin_ok = std::fabs(twist.x)    >= g_exclusive_linear_threshold;
+      const bool ang_ok = std::fabs(twist.theta) >= g_exclusive_angular_threshold;
+      if (lin_ok && ang_ok) {
+        if (g_exclusive_policy == "ANGULAR_PRIORITY") {
+          twist.x = 0.0;
+        } else if (g_exclusive_policy == "LINEAR_PRIORITY") {
+          twist.theta = 0.0;
+        } else { // AUTO：带权比较，避免量纲不一致
+          const double lin_val = std::fabs(twist.x)     * g_exclusive_linear_gain;
+          const double ang_val = std::fabs(twist.theta) * g_exclusive_angular_gain;
+          if (ang_val >= lin_val) {
+            twist.x = 0.0;
+          } else {
+            twist.theta = 0.0;
+          }
+        }
+      } else if (lin_ok) {
+        twist.theta = 0.0;
+      } else if (ang_ok) {
+        twist.x = 0.0;
+      } else {
+        twist.x = 0.0;
+        twist.theta = 0.0;
+      }
+    }
+
     traj = traj_generator_->generateTrajectory(pose, velocity, twist);
 
     try {

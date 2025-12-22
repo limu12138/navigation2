@@ -27,6 +27,8 @@ void MPPIController::configure(
   std::string name, const std::shared_ptr<tf2_ros::Buffer> tf,
   const std::shared_ptr<nav2_costmap_2d::Costmap2DROS> costmap_ros)
 {
+  // Nav2 生命周期：on_configure 阶段
+  // 这里完成依赖注入（tf/costmap/node）、参数读取、以及各子模块初始化。
   parent_ = parent;
   costmap_ros_ = costmap_ros;
   tf_buffer_ = tf;
@@ -42,8 +44,11 @@ void MPPIController::configure(
   getParam(reset_period_, "reset_period", 1.0);
 
   // Configure composed objects
+  // Optimizer：MPPI 的核心（采样/评分/更新 -> 输出控制）
   optimizer_.initialize(parent_, name_, costmap_ros_, parameters_handler_.get());
+  // PathHandler：将全局路径变换到局部坐标系，并做裁剪/管理
   path_handler_.initialize(parent_, name_, costmap_ros_, tf_buffer_, parameters_handler_.get());
+  // TrajectoryVisualizer：可视化候选轨迹/最优轨迹（通常只用于调试）
   trajectory_visualizer_.on_configure(
     parent_, name_,
     costmap_ros_->getGlobalFrameID(), parameters_handler_.get());
@@ -82,6 +87,13 @@ geometry_msgs::msg::TwistStamped MPPIController::computeVelocityCommands(
   const geometry_msgs::msg::Twist & robot_speed,
   nav2_core::GoalChecker * goal_checker)
 {
+  // controller_server 的主循环每个周期都会进到这里。
+  // 关键执行顺序：
+  // 1) 可选 reset（防止长时间累积导致控制序列漂移）
+  // 2) 参数锁（动态参数在运行时可能更新）
+  // 3) 将全局 plan 变换到局部 frame（通常是 costmap 的 frame）
+  // 4) costmap 互斥锁，确保在评分期间地图一致
+  // 5) 调用 Optimizer::evalControl() 得到 cmd_vel
 #ifdef BENCHMARK_TESTING
   auto start = std::chrono::system_clock::now();
 #endif
@@ -92,11 +104,14 @@ geometry_msgs::msg::TwistStamped MPPIController::computeVelocityCommands(
   last_time_called_ = clock_->now();
 
   std::lock_guard<std::mutex> param_lock(*parameters_handler_->getLock());
+  // plan 变换：从全局路径 -> 本地路径（与机器人当前姿态一致的坐标系）
   nav_msgs::msg::Path transformed_plan = path_handler_.transformPath(robot_pose);
 
   nav2_costmap_2d::Costmap2D * costmap = costmap_ros_->getCostmap();
   std::unique_lock<nav2_costmap_2d::Costmap2D::mutex_t> costmap_lock(*(costmap->getMutex()));
 
+  // MPPI 入口：在 Optimizer 内部完成采样、轨迹 rollout、critic 打分、
+  // softmax 加权更新控制序列，并返回当前时刻（或 offset 后）的控制量。
   geometry_msgs::msg::TwistStamped cmd =
     optimizer_.evalControl(robot_pose, robot_speed, transformed_plan, goal_checker);
 
@@ -133,4 +148,7 @@ void MPPIController::setSpeedLimit(const double & speed_limit, const bool & perc
 }  // namespace nav2_mppi_controller
 
 #include "pluginlib/class_list_macros.hpp"
+// pluginlib 为什么能根据字符串找到类？因为 nav2_mppi_controller 做了导出注册：
+// - C++ 导出注册（把类注册成可加载插件）
+// - 配套的 plugin XML + package.xml export（用于 discovery）
 PLUGINLIB_EXPORT_CLASS(nav2_mppi_controller::MPPIController, nav2_core::Controller)

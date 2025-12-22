@@ -1386,53 +1386,54 @@ AmclNode::dynamicParametersCallback(
 void
 AmclNode::mapReceived(const nav_msgs::msg::OccupancyGrid::SharedPtr msg)
 {
-  RCLCPP_DEBUG(get_logger(), "AmclNode: A new map was received.");
+  RCLCPP_DEBUG(get_logger(), "******************AmclNode: A new map was received.******************");
+  RCLCPP_INFO(get_logger(), "******************AmclNode: A new map was received.******************");
   if (!nav2_util::validateMsg(*msg)) {
     RCLCPP_ERROR(get_logger(), "Received map message is malformed. Rejecting.");
     return;
   }
-  if (first_map_only_ && first_map_received_) {
+  if (first_map_only_ && first_map_received_) {  // 作用：在某些场景下，AMCL 只需要初始地图，后续地图更新忽略, first_map_only_默认是false
     return;
   }
-  handleMapMessage(*msg);
+  handleMapMessage(*msg);  // 实际处理地图的函数
   first_map_received_ = true;
 }
 
 void
 AmclNode::handleMapMessage(const nav_msgs::msg::OccupancyGrid & msg)
 {
-  std::lock_guard<std::recursive_mutex> cfl(mutex_);
+  std::lock_guard<std::recursive_mutex> cfl(mutex_);  // 线程安全：使用互斥锁保护共享资源
 
-  RCLCPP_INFO(
+  RCLCPP_INFO(  
     get_logger(), "Received a %d X %d map @ %.3f m/pix",
     msg.info.width,
     msg.info.height,
-    msg.info.resolution);
+    msg.info.resolution);  // 打印接收到的地图信息, 宽度 X 高度 @ 分辨率 米/像素
   if (msg.header.frame_id != global_frame_id_) {
     RCLCPP_WARN(
       get_logger(), "Frame_id of map received:'%s' doesn't match global_frame_id:'%s'. This could"
       " cause issues with reading published topics",
-      msg.header.frame_id.c_str(),
-      global_frame_id_.c_str());
-  }
-  freeMapDependentMemory();
-  map_ = convertMap(msg);
+      msg.header.frame_id.c_str(),  // 地图消息中的坐标系 ID
+      global_frame_id_.c_str());  // AMCL 配置的全局坐标系（通常是 "map"）
+  }  // 检查地图的frame_id是否与全局frame_id匹配，不匹配则发出警告
+  freeMapDependentMemory();  // 释放与旧地图相关的内存资源
+  map_ = convertMap(msg);  // 将OccupancyGrid消息转换为内部地图表示形式
 
-#if NEW_UNIFORM_SAMPLING
-  createFreeSpaceVector();
+#if NEW_UNIFORM_SAMPLING  // 作用：优化粒子采样，只在自由空间采样, 如果启用了新的均匀采样方法
+  createFreeSpaceVector();  // 创建自由空间索引向量
 #endif
 }
 
 void
-AmclNode::createFreeSpaceVector()
+AmclNode::createFreeSpaceVector()  // 作用：创建自由空间索引向量, 记录地图中所有自由空间的坐标
 {
   // Index of free space
-  free_space_indices.resize(0);
-  for (int i = 0; i < map_->size_x; i++) {
-    for (int j = 0; j < map_->size_y; j++) {
-      if (map_->cells[MAP_INDEX(map_, i, j)].occ_state == -1) {
-        free_space_indices.push_back(std::make_pair(i, j));
-      }
+  free_space_indices.resize(0);  // 清空自由空间索引向量
+  for (int i = 0; i < map_->size_x; i++) {  // 遍历地图的每一行
+    for (int j = 0; j < map_->size_y; j++) {  // 遍历地图的每一列
+      if (map_->cells[MAP_INDEX(map_, i, j)].occ_state == -1) {  // MAP_INDEX：宏或函数，计算一维数组索引, 公式通常是：j * size_x + i（行优先）
+        free_space_indices.push_back(std::make_pair(i, j));  // 如果该单元格是自由空间状态（-1），则将其坐标添加到自由空间索引向量中
+      }  // 这里假设 -1 表示自由空间，+1 表示占据状态，0 表示空闲未知状态  
     }
   }
 }
@@ -1454,32 +1455,32 @@ AmclNode::freeMapDependentMemory()
 
 // Convert an OccupancyGrid map message into the internal representation. This function
 // allocates a map_t and returns it.
-map_t *
+map_t *  // 作用：将OccupancyGrid消息转换为内部地图表示形式
 AmclNode::convertMap(const nav_msgs::msg::OccupancyGrid & map_msg)
 {
   map_t * map = map_alloc();
 
-  map->size_x = map_msg.info.width;
-  map->size_y = map_msg.info.height;
-  map->scale = map_msg.info.resolution;
-  map->origin_x = map_msg.info.origin.position.x + (map->size_x / 2) * map->scale;
-  map->origin_y = map_msg.info.origin.position.y + (map->size_y / 2) * map->scale;
+  map->size_x = map_msg.info.width;  // 地图的宽度（列数）
+  map->size_y = map_msg.info.height;  // 地图的高度（行数）
+  map->scale = map_msg.info.resolution;  // 地图的分辨率（每个像素代表的实际距离）
+  map->origin_x = map_msg.info.origin.position.x + (map->size_x / 2) * map->scale;  // 地图原点的X坐标，通常是地图中心, map_msg.info.origin.position.x 表示原点的 x 坐标。然后，计算地图的中心（宽度的一半）乘以地图的分辨率，得到地图中心的 x 坐标。最终将两者相加得到地图的原点位置。
+  map->origin_y = map_msg.info.origin.position.y + (map->size_y / 2) * map->scale;  // 地图原点的Y坐标，通常是地图中心, map_msg.info.origin.position.y 表示原点的 y 坐标。然后，计算地图的中心（高度的一半）乘以地图的分辨率，得到地图中心的 y 坐标。最终将两者相加得到地图的原点位置。
 
   map->cells =
-    reinterpret_cast<map_cell_t *>(malloc(sizeof(map_cell_t) * map->size_x * map->size_y));
+    reinterpret_cast<map_cell_t *>(malloc(sizeof(map_cell_t) * map->size_x * map->size_y));  // 分配内存给地图单元格数组, map->cells 是一个指向 map_cell_t 类型的指针，表示地图中的每个单元格。使用 malloc 分配了足够的内存来存储 size_x * size_y 个 map_cell_t 类型的单元格。
 
   // Convert to player format
-  for (int i = 0; i < map->size_x * map->size_y; i++) {
+  for (int i = 0; i < map->size_x * map->size_y; i++) {  // 遍历地图的每个单元格
     if (map_msg.data[i] == 0) {
-      map->cells[i].occ_state = -1;
+      map->cells[i].occ_state = -1;  // 自由空间
     } else if (map_msg.data[i] == 100) {
-      map->cells[i].occ_state = +1;
+      map->cells[i].occ_state = +1;  // 占用空间
     } else {
-      map->cells[i].occ_state = 0;
+      map->cells[i].occ_state = 0;  // 未知空间, 表示该位置的占据状态不确定
     }
   }
 
-  return map;
+  return map;  // 返回转换后的地图指针
 }
 
 void
@@ -1546,10 +1547,10 @@ AmclNode::initPubSub()
     map_topic_, rclcpp::QoS(rclcpp::KeepLast(1)).transient_local().reliable(),
     std::bind(&AmclNode::mapReceived, this, std::placeholders::_1));
 
-  // 订阅 grid_map 消息
-  grid_map_sub_ = this->create_subscription<grid_map_msgs::msg::GridMap>(
-    grid_map_topic_, rclcpp::QoS(10),
-    std::bind(&AmclNode::gridMapCallback, this, std::placeholders::_1));
+  // // 订阅 grid_map 消息
+  // grid_map_sub_ = create_subscription<grid_map_msgs::msg::GridMap>(
+  //   grid_map_topic_, rclcpp::QoS(10),
+  //   std::bind(&AmclNode::gridMapCallback, this, std::placeholders::_1));
   
   RCLCPP_INFO(get_logger(), "Subscribed to map topic.");
 }
@@ -1658,7 +1659,7 @@ AmclNode::gridMapCallback(const grid_map_msgs::msg::GridMap::SharedPtr msg) {
   for (grid_map::GridMapIterator it(grid_map); !it.isPastEnd(); ++it) {
     const grid_map::Index index(*it);
     const float value = grid_map.at(traversability_layer, index);
-    const int nav_index = index(1) * nav_map.info.width + index(0);  // 注意su：这里可能有一个潜在的索引转换错误
+    const int nav_index = index(1) * nav_map.info.width + index(0);  // 注意su：这里可能有一个潜在的索引转换错误 // 计算在 nav_map 中的索引位置,公式通常是：j * size_x + i（行优先）
     nav_map.data[nav_index] = (value > 0.5) ? 0 : 100; // 可通行为 0，不可通行为 100
   }
 

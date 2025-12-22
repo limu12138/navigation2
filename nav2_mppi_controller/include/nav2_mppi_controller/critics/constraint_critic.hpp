@@ -49,6 +49,15 @@ protected:
   float weight_{0};
   float min_vel_;
   float max_vel_;
+
+  // Soft mutual-exclusivity constraint (walk-then-turn-then-walk):
+  // penalize timesteps where both |vx| and |wz| exceed their epsilons.
+  float exclusive_linear_epsilon_{0.0F};
+  float exclusive_angular_epsilon_{0.0F};
+  float exclusive_weight_{0.0F};
+  unsigned int exclusive_power_{1U};
+  // 0: product  1: indicator  2: min
+  unsigned int exclusive_cost_mode_{0U};
 };
 
 }  // namespace mppi::critics

@@ -1,0 +1,24 @@
+explore_node:
+  ros__parameters:
+    robot_base_frame: base_link
+    costmap_topic: /global_costmap/costmap
+    costmap_updates_topic: /global_costmap/costmap_updates
+    visualize: true
+    # 前沿更新频率（默认0.15，有点慢）
+    planner_frequency: 0.5
+    
+    # x秒内没有靠近某个frontier，就认为该前沿不可达
+    progress_timeout: 60.0
+    
+    # 距离越近的前沿得分越高（吸引力，默认3）
+    potential_scale: 1.0
+    
+    # 朝向优化（默认0）
+    orientation_scale: 0.0
+    
+    # 前沿包含的未知栅格越多 → 得分更高（收益，默认1）
+    gain_scale: 2.0
+    transform_tolerance: 0.3
+    
+    # 一个frontier的最小面积（平方米）
+    min_frontier_size: 0.05

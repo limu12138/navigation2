@@ -164,7 +164,7 @@ def generate_launch_description():
         ),
         launch_arguments={
             'world': world,
-            'verbose': 'true'
+            'verbose': 'True'
         }.items()
     )
 
@@ -173,7 +173,7 @@ def generate_launch_description():
             os.path.join(pkg_gazebo_ros, 'launch', 'gzclient.launch.py')
         ),
         launch_arguments={
-            'verbose': 'true'
+            'verbose': 'True'
         }.items()
     )
 
@@ -200,7 +200,8 @@ def generate_launch_description():
         executable='robot_state_publisher',
         name='robot_state_publisher',
         namespace=namespace,
-        output='screen',
+        output='screen',  # 日志重定向到文件
+        # arguments=['--ros-args', '--log-level', 'DEBUG'],
         parameters=[{'use_sim_time': use_sim_time,
                      'robot_description': robot_description}],
         remappings=remappings)
@@ -208,7 +209,7 @@ def generate_launch_description():
     start_gazebo_spawner_cmd = Node(
         package='gazebo_ros',
         executable='spawn_entity.py',
-        output='screen',
+        output='screen',  # 日志重定向到文件
         arguments=[
             '-entity', robot_name,
             '-file', robot_sdf,
@@ -227,15 +228,18 @@ def generate_launch_description():
     bringup_cmd = IncludeLaunchDescription(
         PythonLaunchDescriptionSource(
             os.path.join(launch_dir, 'bringup_launch.py')),
-        launch_arguments={'namespace': namespace,
-                          'use_namespace': use_namespace,
-                          'slam': slam,
-                          'map': map_yaml_file,
-                          'use_sim_time': use_sim_time,
-                          'params_file': params_file,
-                          'autostart': autostart,
-                          'use_composition': use_composition,
-                          'use_respawn': use_respawn}.items())
+        launch_arguments={
+            'namespace': namespace,
+            'use_namespace': use_namespace,
+            'slam': slam,
+            'map': map_yaml_file,
+            'use_sim_time': use_sim_time,
+            'params_file': params_file,
+            'autostart': autostart,
+            'use_composition': use_composition,
+            'use_respawn': use_respawn,
+            'log_level': 'DEBUG'
+        }.items())
 
     # Create the launch description and populate
     ld = LaunchDescription()

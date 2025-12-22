@@ -218,7 +218,7 @@ def generate_launch_description():
 
         # 无论是否 SLAM/Localization，都需要 navigation 栈（规划、控制、BT、waypoint follower 等）
         IncludeLaunchDescription(
-            PythonLaunchDescriptionSource(os.path.join(launch_dir, 'navigation_launch.py')),
+            PythonLaunchDescriptionSource(os.path.join(launch_dir, 'navigation_launch_without_smooth.py')),
             launch_arguments={'namespace': namespace,
                               'use_sim_time': use_sim_time,
                               'autostart': autostart,

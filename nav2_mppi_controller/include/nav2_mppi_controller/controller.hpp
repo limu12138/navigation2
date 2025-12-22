@@ -36,6 +36,14 @@ using namespace mppi;  // NOLINT
 /**
  * @class mppi::MPPIController
  * @brief Main plugin controller for MPPI Controller
+ *
+ * 运行时序（从 Nav2 的 controller_server 视角）：
+ * 1) controller_server 周期性调用 computeVelocityCommands()
+ * 2) 本类负责：取参数锁、把全局路径变换到局部坐标系、锁住 costmap
+ * 3) 然后调用 Optimizer::evalControl() 做 MPPI 优化，返回 TwistStamped
+ *
+ * 注意：MPPIController 本身不做“优化数学”，它是 Nav2 插件壳，
+ * 真正的 MPPI 采样/评分/更新在 mppi::Optimizer 里。
  */
 class MPPIController : public nav2_core::Controller
 {

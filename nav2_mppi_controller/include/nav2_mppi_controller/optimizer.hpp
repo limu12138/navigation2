@@ -47,6 +47,18 @@ namespace mppi
 /**
  * @class mppi::Optimizer
  * @brief Main algorithm optimizer of the MPPI Controller
+ *
+ * 你可以把 Optimizer 理解成“信息论 MPPI”的落地实现：
+ * - 维护一条名义控制序列 control_sequence_（长度 time_steps）
+ * - 每次迭代围绕名义控制序列采样 batch_size 条控制序列（state_.cvx/cwz/cvy）
+ * - rollout 成 batch_size 条轨迹（generated_trajectories_）
+ * - 调用一组 critics 计算每条轨迹的成本 costs_[i]
+ * - 用 softmax 权重对采样控制加权平均，更新 control_sequence_
+ *
+ * 与经典公式的对应（高层直觉）：
+ * - 采样：u_k^i = u_k + eps_k^i
+ * - 权重：w_i \propto exp(-1/T * J_i)
+ * - 更新：u_k <- \sum_i w_i * u_k^i
  */
 class Optimizer
 {
