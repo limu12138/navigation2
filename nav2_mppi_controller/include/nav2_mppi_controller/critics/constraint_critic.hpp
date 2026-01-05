@@ -50,14 +50,39 @@ protected:
   float min_vel_;
   float max_vel_;
 
+  // Parent constraints cached for normalization / scoring.
+  float vx_max_{0.5F};
+  float vx_min_{-0.35F};
+  float wz_max_{1.9F};
+
   // Soft mutual-exclusivity constraint (walk-then-turn-then-walk):
   // penalize timesteps where both |vx| and |wz| exceed their epsilons.
   float exclusive_linear_epsilon_{0.0F};
   float exclusive_angular_epsilon_{0.0F};
+
+  // Product penalty: max(|vx|-eps_v,0) * max(|wz|-eps_w,0)
   float exclusive_weight_{0.0F};
   unsigned int exclusive_power_{1U};
-  // 0: product  1: indicator  2: min
-  unsigned int exclusive_cost_mode_{0U};
+
+  // Min penalty (continuous alternative): min(v_excess/v_scale, w_excess/w_scale)
+  float exclusive_min_weight_{0.0F};
+  unsigned int exclusive_min_power_{1U};
+
+  // Policy-based penalty: when both exceed thresholds, penalize the axis
+  // that the policy says should be suppressed (mimics hard projection).
+  float exclusive_case_weight_{0.0F};
+  unsigned int exclusive_case_power_{1U};
+
+  // Switch penalty: penalize frequent toggling between linear and angular
+  // modes across consecutive timesteps.
+  float exclusive_switch_weight_{0.0F};
+  unsigned int exclusive_switch_power_{1U};
+
+  // Reuse MPPI optimizer's policy/gains for consistent behavior.
+  // 0: ANGULAR_PRIORITY, 1: LINEAR_PRIORITY, 2: AUTO
+  int exclusive_policy_{2};
+  float exclusive_linear_gain_{1.0F};
+  float exclusive_angular_gain_{1.0F};
 };
 
 }  // namespace mppi::critics

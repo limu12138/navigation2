@@ -135,7 +135,15 @@ controller_server:
 
     # MPPI parameters (替换 DWB 为 MPPI，并加入线/角互斥配置)
     FollowPath:
-      plugin: "nav2_mppi_controller::MPPIController"
+      plugin: "nav2_rotation_shim_controller::RotationShimController"
+      primary_controller: "nav2_mppi_controller::MPPIController"
+      angular_dist_threshold: 0.785
+      forward_sampling_distance: 0.5
+      rotate_to_heading_angular_vel: 1.8
+      max_angular_accel: 3.2
+      simulate_ahead_time: 1.0
+      rotate_to_goal_heading: false
+
       time_steps: 56  # 候选轨迹中的时间步数（点数）
       model_dt: 0.05  # model_dt``参数通常应设置为控制频率的持续时间。因此，如果控制频率为20hz，则应设置为``0.05。但是，您也可以将其设置得更低**但不能更高**  # 每个时间步长``dt``的长度，以秒为单位。``time_steps * model_dt``是预测的时间范围
       batch_size: 2000  # 在给定迭代中，从当前最优控制序列中随机抽样的候选轨迹数量。以每秒50次的频率进行1000次或以每秒30次的频率进行2000次似乎能产生良好的结果
@@ -163,18 +171,23 @@ controller_server:
         enabled: true
         cost_power: 1  # 应用于项的幂次
         cost_weight: 4.0  # 应用于评估器项的权重
-        # # 互斥软约束（推荐开启）：当 |vx| > epsilon_v 且 |wz| > epsilon_w 时施加大惩罚，逼近“走-转-走”。
-        # # 说明：epsilon 选得更大，会允许微小的“混合”用于平滑；weight 越大，越接近硬约束。
-        # exclusive_linear_epsilon: 0.05
-        # exclusive_angular_epsilon: 0.10
-        # exclusive_cost_weight: 1000.0
-        # exclusive_cost_power: 1
-
-        exclusive_cost_mode: "min"
-        exclusive_linear_epsilon: 0.03
-        exclusive_angular_epsilon: 0.08
-        exclusive_cost_weight: 30000.0
+        # 互斥软约束（保留乘积，同时增加更稳的 min / 按策略惩罚）
+        # - 建议先从较小权重开始，否则 MPPI 可能更倾向“停住”来规避惩罚
+        exclusive_linear_epsilon: 0.12
+        exclusive_angular_epsilon: 0.12
+        # 乘积项：v_excess * w_excess（保留）
+        exclusive_cost_weight: 1.0
         exclusive_cost_power: 1
+        # 连续 min 项：min(v_excess/v_scale, w_excess/w_scale)（默认先关闭）
+        exclusive_min_cost_weight: 0.0
+        exclusive_min_cost_power: 1
+        # 分情况项：两轴都超过阈值时按策略惩罚被抑制轴（默认先关闭）
+        exclusive_case_cost_weight: 3.0
+        exclusive_case_cost_power: 1
+        # 模式切换惩罚：抑制 lin<->ang 的频繁来回切换，减少抽搐
+        exclusive_switch_cost_weight: 50.0
+        exclusive_switch_cost_power: 1
+      
       GoalCritic:
         enabled: true
         cost_power: 1
@@ -234,8 +247,8 @@ controller_server:
       exclusive_mode: True
       exclusive_debug: True
       exclusive_policy: "ANGULAR_PRIORITY"   # 可选："LINEAR_PRIORITY" / "AUTO" / "ANGULAR_PRIORITY"
-      exclusive_linear_threshold: 0.01        # 线速度判定阈值 (m/s)
-      exclusive_angular_threshold: 0.1     # 角速度判定阈值 (rad/s) 0.1
+      exclusive_linear_threshold: 0.12        # 线速度判定阈值 (m/s)
+      exclusive_angular_threshold: 0.12     # 角速度判定阈值 (rad/s)
       exclusive_linear_gain: 1.0             # 线速度权重
       exclusive_angular_gain: 3.0            # 角速度折算系数
 

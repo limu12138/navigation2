@@ -20,6 +20,8 @@
 #include <string>
 #include <vector>
 #include <cmath>
+#include <sstream>
+#include <iterator>
 #include <xtensor/xmath.hpp>
 #include <xtensor/xrandom.hpp>
 #include <xtensor/xnoalias.hpp>
@@ -38,6 +40,65 @@ struct ExclusiveViolationCheck
   bool ang_ok{false};
   bool violates{false};
 };
+
+struct ExclusiveScalarDebug
+{
+  bool lin_ok{false};
+  bool ang_ok{false};
+  bool choose_lin{false};
+  bool choose_ang{false};
+  float vx_scale{0.0f};
+  float wz_scale{0.0f};
+  float lin_score{0.0f};
+  float ang_score{0.0f};
+};
+
+inline rclcpp::Logger exclusiveDebugLogger()
+{
+  return rclcpp::get_logger("nav2_mppi_controller.exclusive_debug");
+}
+
+template<typename It>
+std::string dumpRange(It begin, It end, std::size_t max_elems = 120)
+{
+  std::ostringstream oss;
+  const std::size_t n = static_cast<std::size_t>(std::distance(begin, end));
+  oss << "size=" << n << " [";
+
+  if (n <= max_elems) {
+    std::size_t i = 0;
+    for (auto it = begin; it != end; ++it, ++i) {
+      if (i > 0) {
+        oss << ", ";
+      }
+      oss << *it;
+    }
+    oss << "]";
+    return oss.str();
+  }
+
+  const std::size_t head = max_elems / 2;
+  const std::size_t tail = max_elems - head;
+
+  std::size_t i = 0;
+  for (auto it = begin; it != end && i < head; ++it, ++i) {
+    if (i > 0) {
+      oss << ", ";
+    }
+    oss << *it;
+  }
+  oss << ", ... , ";
+  std::advance(begin, static_cast<std::ptrdiff_t>(n - tail));
+  i = 0;
+  for (auto it = begin; it != end; ++it, ++i) {
+    if (i > 0) {
+      oss << ", ";
+    }
+    oss << *it;
+  }
+  oss << "]";
+  return oss.str();
+}
 
 inline const char * exclusivePolicyToString(const mppi::models::OptimizerSettings & s)
 {
@@ -63,7 +124,8 @@ inline ExclusiveViolationCheck checkExclusiveMutualViolation(
 
 inline void applyExclusiveMutualConstraintScalar(
   float & vx, float & wz,
-  const mppi::models::OptimizerSettings & s)
+  const mppi::models::OptimizerSettings & s,
+  ExclusiveScalarDebug * dbg)
 {
   if (!s.exclusive_mode) {
     return;
@@ -71,6 +133,12 @@ inline void applyExclusiveMutualConstraintScalar(
 
   const bool lin_ok = std::fabs(vx) > s.exclusive_linear_threshold;
   const bool ang_ok = std::fabs(wz) > s.exclusive_angular_threshold;
+
+  if (dbg) {
+    dbg->lin_ok = lin_ok;
+    dbg->ang_ok = ang_ok;
+  }
+
   if (!lin_ok && !ang_ok) {
     return;
   }
@@ -94,14 +162,21 @@ inline void applyExclusiveMutualConstraintScalar(
   const float lin_score = std::fabs(vx) / vx_scale;
   const float ang_score = std::fabs(wz) / wz_scale;
 
+  if (dbg) {
+    dbg->vx_scale = vx_scale;
+    dbg->wz_scale = wz_scale;
+    dbg->lin_score = lin_score;
+    dbg->ang_score = ang_score;
+  }
+
   bool choose_ang = false;
   bool choose_lin = false;
   if (s.exclusive_policy == 0) {  // ANGULAR_PRIORITY
-    choose_ang = (ang_score >= lin_score);
-    choose_lin = (lin_score > ang_score);
+    choose_ang = true;
+    choose_lin = false;
   } else if (s.exclusive_policy == 1) {  // LINEAR_PRIORITY
-    choose_lin = (lin_score >= ang_score);
-    choose_ang = (ang_score > lin_score);
+    choose_lin = true;
+    choose_ang = false;
   } else {  // AUTO (weighted)
     choose_ang = (ang_score * s.exclusive_angular_gain >= lin_score * s.exclusive_linear_gain);
     choose_lin = (lin_score * s.exclusive_linear_gain > ang_score * s.exclusive_angular_gain);
@@ -113,6 +188,18 @@ inline void applyExclusiveMutualConstraintScalar(
   if (choose_lin) {
     wz = 0.0f;
   }
+
+  if (dbg) {
+    dbg->choose_ang = choose_ang;
+    dbg->choose_lin = choose_lin;
+  }
+}
+
+inline void applyExclusiveMutualConstraintScalar(
+  float & vx, float & wz,
+  const mppi::models::OptimizerSettings & s)
+{
+  applyExclusiveMutualConstraintScalar(vx, wz, s, nullptr);
 }
 
 template<typename TVx, typename TWz>
@@ -124,6 +211,14 @@ void applyExclusiveMutualConstraint(
     return;
   }
 
+  const bool debug = s.exclusive_debug;
+  if (debug) {
+    auto log = exclusiveDebugLogger();
+    RCLCPP_FATAL(log, "[exclusive] ENTER applyExclusiveMutualConstraint() policy=%s", exclusivePolicyToString(s));
+    RCLCPP_FATAL(log, "[exclusive] vx BEFORE: %s", dumpRange(vx.begin(), vx.end()).c_str());
+    RCLCPP_FATAL(log, "[exclusive] wz BEFORE: %s", dumpRange(wz.begin(), wz.end()).c_str());
+  }
+
   // 逐元素施加互斥投影（对整个控制序列 / 整个 batch 控制张量都生效）。
   // 这里避免依赖 xtensor 的逐元素逻辑运算符细节，直接使用标量约束函数，
   // 保证“所有元素都互斥”的语义明确且稳定。
@@ -131,14 +226,51 @@ void applyExclusiveMutualConstraint(
     throw std::runtime_error("Exclusive constraint: vx/wz size mismatch");
   }
 
-  auto * vx_ptr = vx.data();
-  auto * wz_ptr = wz.data();
-  for (size_t i = 0; i < vx.size(); ++i) {
-    float vx_scalar = vx_ptr[i];
-    float wz_scalar = wz_ptr[i];
-    applyExclusiveMutualConstraintScalar(vx_scalar, wz_scalar, s);
-    vx_ptr[i] = vx_scalar;
-    wz_ptr[i] = wz_scalar;
+  // IMPORTANT:
+  // Do NOT iterate via data()[i]. TVx/TWz may be xtensor views/strided views
+  // where logical element order != contiguous memory order.
+  // Iterators walk the logical elements safely for both owning tensors and views.
+  auto vx_it = vx.begin();
+  auto wz_it = wz.begin();
+  std::size_t idx = 0;
+  for (; vx_it != vx.end(); ++vx_it, ++wz_it, ++idx) {
+    float vx_scalar_before = *vx_it;
+    float wz_scalar_before = *wz_it;
+
+    if (debug && idx < 8) {
+      auto log = exclusiveDebugLogger();
+      RCLCPP_FATAL(log, "[exclusive] idx=%zu BEFORE  vx=%f wz=%f", idx, vx_scalar_before, wz_scalar_before);
+    }
+
+    float vx_scalar = vx_scalar_before;
+    float wz_scalar = wz_scalar_before;
+    ExclusiveScalarDebug dbg;
+    applyExclusiveMutualConstraintScalar(vx_scalar, wz_scalar, s, debug ? &dbg : nullptr);
+
+    if (debug && idx < 8) {
+      auto log = exclusiveDebugLogger();
+      // 这里打印的是计算中用到的“常量/中间量”（scale/score/选择结果），不去打印 ROS 参数键名。
+      RCLCPP_FATAL(
+        log,
+        "[exclusive] idx=%zu flags lin_ok=%d ang_ok=%d choose_lin=%d choose_ang=%d",
+        idx, static_cast<int>(dbg.lin_ok), static_cast<int>(dbg.ang_ok),
+        static_cast<int>(dbg.choose_lin), static_cast<int>(dbg.choose_ang));
+      RCLCPP_FATAL(
+        log,
+        "[exclusive] idx=%zu const vx_scale=%f wz_scale=%f lin_score=%f ang_score=%f",
+        idx, dbg.vx_scale, dbg.wz_scale, dbg.lin_score, dbg.ang_score);
+      RCLCPP_FATAL(log, "[exclusive] idx=%zu AFTER   vx=%f wz=%f", idx, vx_scalar, wz_scalar);
+    }
+
+    *vx_it = vx_scalar;
+    *wz_it = wz_scalar;
+  }
+
+  if (debug) {
+    auto log = exclusiveDebugLogger();
+    RCLCPP_FATAL(log, "[exclusive] vx AFTER:  %s", dumpRange(vx.begin(), vx.end()).c_str());
+    RCLCPP_FATAL(log, "[exclusive] wz AFTER:  %s", dumpRange(wz.begin(), wz.end()).c_str());
+    RCLCPP_FATAL(log, "[exclusive] LEAVE applyExclusiveMutualConstraint()\n");
   }
 }
 
@@ -198,7 +330,7 @@ void Optimizer::getParams()
 
   // 新增：读取互斥参数
   getParam(s.exclusive_mode, "exclusive_mode", false);
-  getParam(s.exclusive_debug, "exclusive_debug", false);
+  getParam(s.exclusive_debug, "exclusive_debug", true);
   std::string policy_str;
   getParam(policy_str, "exclusive_policy", std::string("ANGULAR_PRIORITY"));
   if (policy_str == "LINEAR_PRIORITY") {
@@ -286,7 +418,7 @@ geometry_msgs::msg::TwistStamped Optimizer::evalControl(
   } while (fallback(critics_data_.fail_flag));
 
   // 对 vx / vy / wz 分别做 Savitzky-Golay (二次, 9 点窗口) 滤波
-  utils::savitskyGolayFilter(control_sequence_, control_history_, settings_);
+  // utils::savitskyGolayFilter(control_sequence_, control_history_, settings_);
   // 平滑后重新施加约束，避免滤波引入线/角同时非零
   // applyControlSequenceConstraints();
   // 取 offset 时刻控制，然后赋值为 ROS TwistStamped
@@ -404,7 +536,18 @@ void Optimizer::generateNoisedTrajectories()
 
   // 互斥约束作为“优化域硬约束”：对采样控制序列做可行域投影
   // 这样生成轨迹、评分、更新与最终输出都在同一可行域中进行。
+  if (settings_.exclusive_debug) {
+    // 用节点 logger_ 打印，避免匿名 logger 配置导致“看不到日志”的情况。
+    RCLCPP_FATAL(logger_, "[exclusive] OUTER BEFORE applyExclusiveMutualConstraint(state_.cvx,state_.cwz)");
+    RCLCPP_FATAL(logger_, "[exclusive] OUTER cvx BEFORE: %s", dumpRange(state_.cvx.begin(), state_.cvx.end()).c_str());
+    RCLCPP_FATAL(logger_, "[exclusive] OUTER cwz BEFORE: %s", dumpRange(state_.cwz.begin(), state_.cwz.end()).c_str());
+  }
   // applyExclusiveMutualConstraint(state_.cvx, state_.cwz, settings_);
+  if (settings_.exclusive_debug) {
+    RCLCPP_FATAL(logger_, "[exclusive] OUTER AFTER applyExclusiveMutualConstraint(state_.cvx,state_.cwz)");
+    RCLCPP_FATAL(logger_, "[exclusive] OUTER cvx AFTER:  %s", dumpRange(state_.cvx.begin(), state_.cvx.end()).c_str());
+    RCLCPP_FATAL(logger_, "[exclusive] OUTER cwz AFTER:  %s", dumpRange(state_.cwz.begin(), state_.cwz.end()).c_str());
+  }
 
   noise_generator_.generateNextNoises();  // 触发“下一次噪声”的生成
 
@@ -634,30 +777,30 @@ geometry_msgs::msg::TwistStamped Optimizer::getControlFromSequenceAsTwist(
   float vx = control_sequence_.vx(offset);
   float wz = control_sequence_.wz(offset);
 
-  // const float vx_raw = vx;
-  // const float wz_raw = wz;
-  // applyExclusiveMutualConstraintScalar(vx, wz, settings_);
+  const float vx_raw = vx;
+  const float wz_raw = wz;
+  applyExclusiveMutualConstraintScalar(vx, wz, settings_);
 
-  // if (settings_.exclusive_debug)
-  // {
-  //   const auto raw_check = checkExclusiveMutualViolation(vx_raw, wz_raw, settings_);
-  //   if (raw_check.violates)
-  //   {
-  //     RCLCPP_ERROR(
-  //         logger_,
-  //         "[exclusive] before changing, violent cmd_vel_nav: "
-  //         "raw(vx=%.6f,wz=%.6f) -> proj(vx=%.6f,wz=%.6f)",
-  //         vx_raw, wz_raw, vx, wz);
-  //   }
+  if (settings_.exclusive_debug)
+  {
+    const auto raw_check = checkExclusiveMutualViolation(vx_raw, wz_raw, settings_);
+    if (raw_check.violates)
+    {
+      RCLCPP_ERROR(
+          logger_,
+          "[exclusive] before changing, violent cmd_vel_nav: "
+          "raw(vx=%.6f,wz=%.6f) -> proj(vx=%.6f,wz=%.6f)",
+          vx_raw, wz_raw, vx, wz);
+    }
 
-  //   const bool changed = (vx_raw != vx) || (wz_raw != wz);
-  //   if (changed)
-  //   {
-  //     RCLCPP_INFO(
-  //         logger_,
-  //         "[exclusive] final projection changed cmd_vel_nav!");
-  //   }
-  // }
+    const bool changed = (vx_raw != vx) || (wz_raw != wz);
+    if (changed)
+    {
+      RCLCPP_INFO(
+          logger_,
+          "[exclusive] final projection changed cmd_vel_nav!");
+    }
+  }
 
   if (isHolonomic()) {
     auto vy = control_sequence_.vy(offset);

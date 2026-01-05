@@ -347,26 +347,33 @@ map_saver:
 #         tolerance: 1.0e-10
 #         do_refinement: true               # Whether to recursively run the smoother 3 times on the results from prior runs to refine the results further
 
-planner_server:
-  ros__parameters:
-    planner_plugin_types: ["nav2_theta_star_planner/ThetaStarPlanner"]
-    use_sim_time: True
-    planner_plugin_ids: ["GridBased"]
-    GridBased:
-      how_many_corners: 8
-      w_euc_cost: 1.0
-      w_traversal_cost: 2.0
-
 # planner_server:
 #   ros__parameters:
-#     expected_planner_frequency: 20.0
+#     planner_plugin_types: ["nav2_theta_star_planner/ThetaStarPlanner"]
 #     use_sim_time: True
-#     planner_plugins: ["GridBased"]
+#     planner_plugin_ids: ["GridBased"]
 #     GridBased:
-#       plugin: "nav2_navfn_planner/NavfnPlanner"
-#       tolerance: 0.5
-#       use_astar: false
-#       allow_unknown: true
+#       how_many_corners: 8
+#       w_euc_cost: 1.0
+#       w_traversal_cost: 2.0
+
+planner_server:
+  ros__parameters:
+    expected_planner_frequency: 20.0
+    use_sim_time: True
+    planner_plugins: ["GridBased"]
+    GridBased:
+      plugin: "nav2_navfn_planner/NavfnPlanner"
+      tolerance: 0.5
+      use_astar: true
+      allow_unknown: true
+      polyline_enable_shortcut: true
+      # Keep a safety buffer from obstacles when shortcutting.
+      # Lower values are more conservative (stay farther from inflation).
+      polyline_max_cost: 200
+      # Densify each straight segment for DWB tracking (meters).
+      # Set to 0.0 to use global costmap resolution.
+      polyline_resample_step: 0.05
 
 smoother_server:
   ros__parameters:
@@ -378,12 +385,12 @@ smoother_server:
       max_its: 1000
       do_refinement: True
 
-behavior_server:
+behavior_server:  # 作用: 输入：Nav2 在导航过程中需要“原地动作”时（例如卡住、恢复、用户远程接管）。输出：直接发速度命令（不走控制器），话题也是 /cmd_vel
   ros__parameters:
     costmap_topic: local_costmap/costmap_raw
     footprint_topic: local_costmap/published_footprint
     cycle_frequency: 10.0
-    behavior_plugins: ["spin", "backup", "drive_on_heading", "assisted_teleop", "wait"]
+    behavior_plugins: ["spin", "backup", "drive_on_heading", "assisted_teleop", "wait"]  # wait：原地不动, spin：原地旋转到指定角度, backup：倒退指定距离, drive_on_heading：沿某方向直走指定距离, assisted_teleop：手柄/键盘遥控（实时速度限制由上面参数约束）
     spin:
       plugin: "nav2_behaviors/Spin"
     backup:
@@ -398,10 +405,10 @@ behavior_server:
     robot_base_frame: base_link
     transform_tolerance: 0.1
     use_sim_time: true
-    simulate_ahead_time: 2.0
-    max_rotational_vel: 1.0
-    min_rotational_vel: 0.4
-    rotational_acc_lim: 3.2
+    simulate_ahead_time: 2.0  # Time to look ahead for collisions
+    max_rotational_vel: 1.0  # 自旋行为参数：最大旋转速度（rad/s）
+    min_rotational_vel: 0.4  # 自旋行为参数：最小旋转速度（rad/s）
+    rotational_acc_lim: 3.2  # 自旋行为参数：最大旋转加速度（rad/s^2）
 
 robot_state_publisher:
   ros__parameters:

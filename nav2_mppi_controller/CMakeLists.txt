@@ -4,6 +4,8 @@ project(nav2_mppi_controller)
 add_definitions(-DXTENSOR_ENABLE_XSIMD)
 add_definitions(-DXTENSOR_USE_XSIMD)
 
+set(CMAKE_BUILD_TYPE “Debug”)
+
 set(XTENSOR_USE_TBB 0)
 set(XTENSOR_USE_OPENMP 0)
 set(XTENSOR_USE_XSIMD 1)

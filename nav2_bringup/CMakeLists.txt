@@ -5,6 +5,8 @@ find_package(ament_cmake REQUIRED)
 find_package(nav2_common REQUIRED)
 find_package(navigation2 REQUIRED)
 
+set(CMAKE_BUILD_TYPE “Debug”)
+
 nav2_package()
 
 install(

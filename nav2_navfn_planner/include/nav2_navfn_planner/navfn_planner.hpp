@@ -127,6 +127,17 @@ protected:
     nav_msgs::msg::Path & plan);
 
   /**
+   * @brief Post-process the computed path into a more polyline-like path.
+   *        This is useful for robots that execute piecewise-linear motion.
+   *
+   * The post-processing is conservative: it only removes points when a straight-line
+   * connection between remaining points is collision-free in the current costmap.
+   *
+   * @param plan Path to be simplified in-place
+   */
+  void postProcessPathToPolyline(nav_msgs::msg::Path & plan);
+
+  /**
    * @brief Compute the potential, or navigation cost, at a given point in the world
    *        must call computePotential first
    * @param world_point Point in world coordinate frame
@@ -207,6 +218,11 @@ protected:
 
   // Whether or not the planner should be allowed to plan through unknown space
   bool allow_unknown_, use_final_approach_orientation_;
+
+  // Polyline post-processing options
+  bool polyline_enable_shortcut_{true};
+  double polyline_resample_step_{0.0};  // meters; <= 0 means use costmap resolution
+  int polyline_max_cost_{252};  // max allowed cost for shortcutting (0..255)
 
   // If the goal is obstructed, the tolerance specifies how many meters the planner
   // can relax the constraint in x and y before failing

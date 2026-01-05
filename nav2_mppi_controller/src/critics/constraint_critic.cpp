@@ -14,9 +14,8 @@
 
 #include "nav2_mppi_controller/critics/constraint_critic.hpp"
 
+#include <algorithm>
 #include <string>
-
-#include <xtensor/xoperation.hpp>
 
 namespace mppi::critics
 {
@@ -36,15 +35,13 @@ void ConstraintCritic::initialize()
   getParam(exclusive_weight_, "exclusive_cost_weight", 0.0);
   getParam(exclusive_power_, "exclusive_cost_power", 1);
 
-  std::string exclusive_cost_mode_str;
-  getParam(exclusive_cost_mode_str, "exclusive_cost_mode", std::string("product"));
-  if (exclusive_cost_mode_str == "indicator") {
-    exclusive_cost_mode_ = 1U;
-  } else if (exclusive_cost_mode_str == "min") {
-    exclusive_cost_mode_ = 2U;
-  } else {
-    exclusive_cost_mode_ = 0U;
-  }
+  // Additional optional forms (keep product too).
+  getParam(exclusive_min_weight_, "exclusive_min_cost_weight", 0.0);
+  getParam(exclusive_min_power_, "exclusive_min_cost_power", 1);
+  getParam(exclusive_case_weight_, "exclusive_case_cost_weight", 0.0);
+  getParam(exclusive_case_power_, "exclusive_case_cost_power", 1);
+  getParam(exclusive_switch_weight_, "exclusive_switch_cost_weight", 0.0);
+  getParam(exclusive_switch_power_, "exclusive_switch_cost_power", 1);
 
   RCLCPP_INFO(
     logger_, "ConstraintCritic instantiated with %d power and %f weight.",
@@ -54,22 +51,36 @@ void ConstraintCritic::initialize()
     RCLCPP_INFO(
       logger_,
       "ConstraintCritic mutual-exclusivity soft penalty enabled: "
-      "mode=%s eps_v=%f eps_w=%f weight=%f power=%u",
-      exclusive_cost_mode_str.c_str(),
+      "eps_v=%f eps_w=%f weight=%f power=%u",
       exclusive_linear_epsilon_,
       exclusive_angular_epsilon_,
       exclusive_weight_,
       exclusive_power_);
   }
 
-  float vx_max, vy_max, vx_min;
-  getParentParam(vx_max, "vx_max", 0.5);
+  float vy_max;
+  getParentParam(vx_max_, "vx_max", 0.5);
   getParentParam(vy_max, "vy_max", 0.0);
-  getParentParam(vx_min, "vx_min", -0.35);
+  getParentParam(vx_min_, "vx_min", -0.35);
+  getParentParam(wz_max_, "wz_max", 1.9);
 
-  const float min_sgn = vx_min > 0.0 ? 1.0 : -1.0;
-  max_vel_ = sqrtf(vx_max * vx_max + vy_max * vy_max);
-  min_vel_ = min_sgn * sqrtf(vx_min * vx_min + vy_max * vy_max);
+  const float min_sgn = vx_min_ > 0.0F ? 1.0F : -1.0F;
+  max_vel_ = sqrtf(vx_max_ * vx_max_ + vy_max * vy_max);
+  min_vel_ = min_sgn * sqrtf(vx_min_ * vx_min_ + vy_max * vy_max);
+
+  // Reuse the optimizer's exclusive policy / gains if present under parent.
+  // Parent param uses a string in many configs; map to int.
+  std::string policy_str;
+  getParentParam(policy_str, "exclusive_policy", std::string("AUTO"));
+  if (policy_str == "ANGULAR_PRIORITY") {
+    exclusive_policy_ = 0;
+  } else if (policy_str == "LINEAR_PRIORITY") {
+    exclusive_policy_ = 1;
+  } else {
+    exclusive_policy_ = 2;
+  }
+  getParentParam(exclusive_linear_gain_, "exclusive_linear_gain", 1.0F);
+  getParentParam(exclusive_angular_gain_, "exclusive_angular_gain", 1.0F);
 }
 
 void ConstraintCritic::score(CriticData & data)
@@ -98,45 +109,101 @@ void ConstraintCritic::score(CriticData & data)
   auto out_of_max_bounds_motion = xt::maximum(vel_total - max_vel_, 0);
   auto out_of_min_bounds_motion = xt::maximum(min_vel_ - vel_total, 0);
 
-  // Soft mutual-exclusivity penalty: add a large cost where both |vx| and |wz|
-  // exceed their epsilons at the same timestep.
-  //
-  // We use an "excess" formulation so the penalty is 0 until thresholds are
-  // crossed, then grows with both magnitudes:
-  //   violation = max(|vx|-eps_v, 0) * max(|wz|-eps_w, 0)
-  //
-  // Shape: (batch_size x time_steps)
-  const bool exclusive_enabled =
-    (exclusive_weight_ > 0.0F) &&
-    ((exclusive_linear_epsilon_ > 0.0F) || (exclusive_angular_epsilon_ > 0.0F));
-  if (exclusive_enabled) {
+  // Soft mutual-exclusivity penalties (walk-then-turn-then-walk).
+  // These are optional and can be combined:
+  //  1) Product (keep): v_excess * w_excess
+  //  2) Min (continuous): min(v_excess/v_scale, w_excess/w_scale)
+  //  3) Case/policy: if both exceed, penalize the axis to be suppressed
+  const bool any_exclusive_enabled =
+    (exclusive_weight_ > 0.0F) || (exclusive_min_weight_ > 0.0F) ||
+    (exclusive_case_weight_ > 0.0F) || (exclusive_switch_weight_ > 0.0F);
+  const bool exclusive_thresholds_enabled =
+    (exclusive_linear_epsilon_ > 0.0F) || (exclusive_angular_epsilon_ > 0.0F);
+
+  if (any_exclusive_enabled && exclusive_thresholds_enabled) {
+    constexpr float eps = 1e-6F;
     const float eps_v = exclusive_linear_epsilon_;
     const float eps_w = exclusive_angular_epsilon_;
-    auto v_excess = xt::maximum(xt::fabs(data.state.vx) - eps_v, 0.0F);
-    auto w_excess = xt::maximum(xt::fabs(data.state.wz) - eps_w, 0.0F);
 
-    // NOTE:
-    // - product: penalize proportional to both magnitudes (smooth, but may
-    //   encourage shrinking both vx and wz if weight is huge / other critics
-    //   conflict)
-    // - indicator: pure boolean penalty (closer to "no simultaneous vx/wz";
-    //   doesn't reward shrinking magnitudes once violating)
-    // - min: penalize the "minor axis" excess (encourages keeping one axis and
-    //   zeroing the other, reducing chattering)
-    xt::xtensor<float, 2> exclusive_violation = xt::eval(v_excess * w_excess);
-    if (exclusive_cost_mode_ == 1U) {
-      auto mask =
-        (xt::fabs(data.state.vx) > eps_v) &&
-        (xt::fabs(data.state.wz) > eps_w);
-      exclusive_violation = xt::eval(xt::where(mask, 1.0F, 0.0F));
-    } else if (exclusive_cost_mode_ == 2U) {
-      exclusive_violation = xt::eval(xt::minimum(v_excess, w_excess));
+    const float vx_scale = std::max(
+      std::max(std::fabs(vx_max_), std::fabs(vx_min_)), eps);
+    const float wz_scale = std::max(std::fabs(wz_max_), eps);
+
+    auto v_abs = xt::fabs(data.state.vx);
+    auto w_abs = xt::fabs(data.state.wz);
+    auto v_excess = xt::maximum(v_abs - eps_v, 0.0F);
+    auto w_excess = xt::maximum(w_abs - eps_w, 0.0F);
+    auto both_over = (v_excess > 0.0F) & (w_excess > 0.0F);
+
+    if (exclusive_weight_ > 0.0F) {
+      auto exclusive_violation = v_excess * w_excess;
+      data.costs += xt::pow(
+        xt::sum(std::move(exclusive_violation) * data.model_dt, {1}, immediate) *
+        exclusive_weight_,
+        exclusive_power_);
     }
 
-    data.costs += xt::pow(
-      xt::sum(std::move(exclusive_violation) * data.model_dt, {1}, immediate) *
-      exclusive_weight_,
-      exclusive_power_);
+    if (exclusive_min_weight_ > 0.0F) {
+      auto v_norm = v_excess / vx_scale;
+      auto w_norm = w_excess / wz_scale;
+      auto min_violation = xt::minimum(v_norm, w_norm);
+      data.costs += xt::pow(
+        xt::sum(std::move(min_violation) * data.model_dt, {1}, immediate) *
+        exclusive_min_weight_,
+        exclusive_min_power_);
+    }
+
+    if (exclusive_case_weight_ > 0.0F) {
+      auto lin_score = v_abs / vx_scale;
+      auto ang_score = w_abs / wz_scale;
+
+      xt::xarray<bool> choose_ang;
+      xt::xarray<bool> choose_lin;
+      if (exclusive_policy_ == 0) {  // ANGULAR_PRIORITY
+        choose_ang = (ang_score >= lin_score);
+        choose_lin = (lin_score > ang_score);
+      } else if (exclusive_policy_ == 1) {  // LINEAR_PRIORITY
+        choose_lin = (lin_score >= ang_score);
+        choose_ang = (ang_score > lin_score);
+      } else {  // AUTO (weighted)
+        choose_ang =
+          (ang_score * exclusive_angular_gain_ >= lin_score * exclusive_linear_gain_);
+        choose_lin =
+          (lin_score * exclusive_linear_gain_ > ang_score * exclusive_angular_gain_);
+      }
+
+      // Use full normalized magnitudes (not only the excess) so this term has
+      // a meaningful effect with moderate weights, while still gating on
+      // both_over to avoid fighting normal single-mode motion.
+      auto suppress_v = xt::where(both_over & choose_ang, lin_score, 0.0F);
+      auto suppress_w = xt::where(both_over & choose_lin, ang_score, 0.0F);
+      auto case_violation = suppress_v + suppress_w;
+
+      data.costs += xt::pow(
+        xt::sum(std::move(case_violation) * data.model_dt, {1}, immediate) *
+        exclusive_case_weight_,
+        exclusive_case_power_);
+    }
+
+    // Switching penalty: discourage rapid alternation between lin and ang.
+    // This helps reduce "twitching" when strict mutual exclusivity is active.
+    //
+    // switch = (lin_t & ang_{t-1}) | (ang_t & lin_{t-1})
+    if (exclusive_switch_weight_ > 0.0F) {
+      auto lin_on = (v_abs > eps_v);
+      auto ang_on = (w_abs > eps_w);
+      auto lin_prev = xt::view(lin_on, xt::all(), xt::range(0, -1));
+      auto ang_prev = xt::view(ang_on, xt::all(), xt::range(0, -1));
+      auto lin_next = xt::view(lin_on, xt::all(), xt::range(1, xt::placeholders::_));
+      auto ang_next = xt::view(ang_on, xt::all(), xt::range(1, xt::placeholders::_));
+      auto switch_mask = (lin_next & ang_prev) | (ang_next & lin_prev);
+      auto switch_cost = xt::where(switch_mask, 1.0F, 0.0F);
+
+      data.costs += xt::pow(
+        xt::sum(std::move(switch_cost) * data.model_dt, {1}, immediate) *
+        exclusive_switch_weight_,
+        exclusive_switch_power_);
+    }
   }
 
   auto acker = dynamic_cast<AckermannMotionModel *>(data.motion_model.get());
