@@ -75,6 +75,12 @@ protected:
   int vx_samples_, vy_samples_, vtheta_samples_;
   KinematicsHandler::Ptr kinematics_handler_;
 
+  // Mutual exclusion (diff-drive “walk-then-turn-then-walk”):
+  // if both linear speed (hypot(x,y)) and angular speed are above thresholds, skip the sample.
+  bool exclusive_mode_{false};
+  double exclusive_linear_threshold_{0.0};
+  double exclusive_angular_threshold_{0.0};
+
   std::shared_ptr<OneDVelocityIterator> x_it_, y_it_, th_it_;
 };
 }  // namespace dwb_plugins

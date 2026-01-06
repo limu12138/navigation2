@@ -62,9 +62,24 @@ void XYThetaIterator::initialize(
     nh,
     plugin_name + ".vtheta_samples", rclcpp::ParameterValue(20));
 
+  // Mutual exclusion parameters (keep names consistent with DWBLocalPlanner):
+  nav2_util::declare_parameter_if_not_declared(
+    nh,
+    plugin_name + ".exclusive_mode", rclcpp::ParameterValue(false));
+  nav2_util::declare_parameter_if_not_declared(
+    nh,
+    plugin_name + ".exclusive_linear_threshold", rclcpp::ParameterValue(0.0));
+  nav2_util::declare_parameter_if_not_declared(
+    nh,
+    plugin_name + ".exclusive_angular_threshold", rclcpp::ParameterValue(0.0));
+
   nh->get_parameter(plugin_name + ".vx_samples", vx_samples_);
   nh->get_parameter(plugin_name + ".vy_samples", vy_samples_);
   nh->get_parameter(plugin_name + ".vtheta_samples", vtheta_samples_);
+
+  nh->get_parameter(plugin_name + ".exclusive_mode", exclusive_mode_);
+  nh->get_parameter(plugin_name + ".exclusive_linear_threshold", exclusive_linear_threshold_);
+  nh->get_parameter(plugin_name + ".exclusive_angular_threshold", exclusive_angular_threshold_);
 }
 
 void XYThetaIterator::startNewIteration(
@@ -104,8 +119,21 @@ bool XYThetaIterator::isValidSpeed(double x, double y, double theta)
   {
     return false;
   }
-  if (vmag_sq == 0.0 && th_it_->getVelocity() == 0.0) {
+  if (vmag_sq == 0.0 && theta == 0.0) {
     return false;
+  }
+
+  // Diff-drive mutual exclusion: forbid simultaneous translation + rotation.
+  // Use thresholds to allow tiny numerical noise around 0.
+  if (exclusive_mode_) {
+    const double lin_thr = std::max(0.0, exclusive_linear_threshold_);
+    const double ang_thr = std::max(0.0, exclusive_angular_threshold_);
+
+    const bool lin_ok = vmag_sq > (lin_thr * lin_thr) + EPSILON;
+    const bool ang_ok = std::fabs(theta) > ang_thr + EPSILON;
+    if (lin_ok && ang_ok) {
+      return false;
+    }
   }
   return true;
 }

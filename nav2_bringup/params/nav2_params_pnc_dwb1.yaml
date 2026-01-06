@@ -48,6 +48,7 @@ bt_navigator:
     bt_loop_duration: 10
     default_server_timeout: 20
     wait_for_service_timeout: 1000
+    # default_nav_to_pose_bt_xml: "/home/**/Workspace/nav2_ws/src/navigation2/nav2_bt_navigator/behavior_trees/navigate_w_recovery_and_replanning_only_if_path_becomes_invalid.xml"
     # 'default_nav_through_poses_bt_xml' and 'default_nav_to_pose_bt_xml' are use defaults:
     # nav2_bt_navigator/navigate_to_pose_w_replanning_and_recovery.xml
     # nav2_bt_navigator/navigate_through_poses_w_replanning_and_recovery.xml
@@ -204,11 +205,9 @@ controller_server:
 
       # 线/角互斥参数（采样阶段生效）
       exclusive_mode: True
-      exclusive_policy: "ANGULAR_PRIORITY"   # 可选："LINEAR_PRIORITY" 或 "AUTO" 或者 "ANGULAR_PRIORITY"
-      exclusive_linear_threshold: 0.1
-      exclusive_angular_threshold: 0.001
-      exclusive_linear_gain: 1.0
-      exclusive_angular_gain: 3.0
+      # 阈值建议设为 0.0（严格禁止“边走边转”），这里保留为 0.0
+      exclusive_linear_threshold: 0.0
+      exclusive_angular_threshold: 0.0
 
 local_costmap:
   local_costmap:
